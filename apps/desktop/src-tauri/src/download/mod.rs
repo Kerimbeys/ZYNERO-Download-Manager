@@ -383,3 +383,49 @@ mod tests {
         let _ = std::fs::remove_dir_all(path);
     }
 }
+
+/// Plans contiguous byte ranges for future concurrent workers.
+/// The final segment absorbs any remainder so the ranges cover the complete file.
+pub fn plan_segments(
+    total_bytes: i64,
+    requested_connections: i64,
+) -> Result<Vec<(i64, i64)>, String> {
+    if total_bytes <= 0 {
+        return Err("Total bytes must be positive".to_string());
+    }
+    let connections = requested_connections.clamp(1, 32).min(total_bytes);
+    let base = total_bytes / connections;
+    let remainder = total_bytes % connections;
+    let mut segments = Vec::with_capacity(connections as usize);
+    let mut start = 0;
+    for index in 0..connections {
+        let length = base + i64::from(index < remainder);
+        let end = start + length - 1;
+        segments.push((start, end));
+        start = end + 1;
+    }
+    Ok(segments)
+}
+
+#[cfg(test)]
+mod segment_tests {
+    use super::plan_segments;
+
+    #[test]
+    fn segment_plan_covers_file_without_gaps() {
+        let segments = plan_segments(100, 3).unwrap();
+        assert_eq!(segments, vec![(0, 33), (34, 66), (67, 99)]);
+        assert_eq!(segments.first().unwrap().0, 0);
+        assert_eq!(segments.last().unwrap().1, 99);
+        for pair in segments.windows(2) {
+            assert_eq!(pair[0].1 + 1, pair[1].0);
+        }
+    }
+
+    #[test]
+    fn segment_connections_are_bounded_and_small_files_are_not_oversplit() {
+        assert_eq!(plan_segments(4, 99).unwrap().len(), 4);
+        assert_eq!(plan_segments(100, 0).unwrap().len(), 1);
+        assert!(plan_segments(0, 4).is_err());
+    }
+}
