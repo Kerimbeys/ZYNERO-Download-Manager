@@ -58,7 +58,7 @@
 
 ## F. Kuyruk, bildirim ve ayarlar
 
-- [ ] F01 — Queue CRUD, priority, automatic start ve max concurrent downloads.
+- [-] F01 — Queue CRUD, priority, automatic start ve max concurrent downloads. Queue/settings SQLite CRUD ve Tauri commands eklendi; scheduler orchestration ve frontend ayar ekranı sonraki adım.
 - [ ] F02 — Scheduler: başlangıç/duruş zamanı ve WAITING/QUEUED geçişleri.
 - [ ] F03 — Windows completion/failure/queue notification'larını optional yap.
 - [ ] F04 — General, Downloads, Connections, Notifications, Appearance, Privacy ve Advanced ayarlarını bağla.
@@ -117,4 +117,5 @@
 | 2026-08-17 | B02/B04/B05 data resilience | Tamamlandı | `0003_queues_segments_settings.sql`, lifecycle transition guard, startup recovery ve 2/2 Rust unit test başarılı |
 | 2026-08-17 | E05/E07 frontend completion | Tamamlandı | Status navigation filtreleri, gerçek aktif/completed stats, system-aware theme başlangıcı ve localStorage tema kalıcılığı; typecheck/build başarılı |
 | 2026-08-17 | C10 test hazırlığı | Devam ediyor | Local TCP HTTP retry ve temp path testleri eklendi; Rust test binary derlendi, uzak terminal köprüsü çıktıyı zaman aşımıyla kesti |
+| 2026-08-17 | F01 queue/settings backend | Devam ediyor | QueueRecord/settings repository CRUD, validation ve `get_queues/save_queue/get_setting/set_setting` Tauri commands eklendi; cargo check/typecheck/build başarılı |
 | 2026-08-17 | K01 reusable skill | Tamamlandı | `/home/ubuntu/skills/zynero-download-manager-development/SKILL.md`; `quick_validate.py` başarılı |

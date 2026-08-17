@@ -1,7 +1,7 @@
 //! SQLite connection, migrations and repositories.
 
 use rusqlite::{params, Connection, OptionalExtension};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{
     fs,
     path::PathBuf,
@@ -30,6 +30,18 @@ pub struct StoredDownload {
     pub error_message: Option<String>,
     pub speed_bps: i64,
     pub eta_seconds: i64,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QueueRecord {
+    pub id: String,
+    pub name: String,
+    pub priority: i64,
+    pub max_concurrent: i64,
+    pub auto_start: bool,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -164,6 +176,54 @@ impl DatabaseState {
         Ok(download)
     }
 
+    pub fn list_queues(&self) -> Result<Vec<QueueRecord>, String> {
+        let connection = self.lock()?;
+        let mut statement = connection.prepare("SELECT id, name, priority, max_concurrent, auto_start, created_at, updated_at FROM queues ORDER BY priority DESC, created_at ASC").map_err(|error| format!("Could not prepare queue query: {error}"))?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok(QueueRecord {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    priority: row.get(2)?,
+                    max_concurrent: row.get(3)?,
+                    auto_start: row.get::<_, i64>(4)? != 0,
+                    created_at: row.get(5)?,
+                    updated_at: row.get(6)?,
+                })
+            })
+            .map_err(|error| format!("Could not read queues: {error}"))?;
+        rows.map(|row| row.map_err(|error| format!("Could not decode queue: {error}")))
+            .collect()
+    }
+
+    pub fn upsert_queue(&self, queue: &QueueRecord) -> Result<(), String> {
+        if queue.name.trim().is_empty() || !(1..=32).contains(&queue.max_concurrent) {
+            return Err("Queue name and max concurrent downloads are invalid".to_string());
+        }
+        let connection = self.lock()?;
+        connection.execute("INSERT INTO queues (id, name, priority, max_concurrent, auto_start, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) ON CONFLICT(id) DO UPDATE SET name = excluded.name, priority = excluded.priority, max_concurrent = excluded.max_concurrent, auto_start = excluded.auto_start, updated_at = CURRENT_TIMESTAMP", params![queue.id, queue.name.trim(), queue.priority, queue.max_concurrent, queue.auto_start as i64]).map_err(|error| format!("Could not save queue: {error}"))?;
+        Ok(())
+    }
+
+    pub fn get_setting(&self, key: &str) -> Result<Option<String>, String> {
+        let connection = self.lock()?;
+        connection
+            .query_row("SELECT value FROM settings WHERE key = ?1", [key], |row| {
+                row.get(0)
+            })
+            .optional()
+            .map_err(|error| format!("Could not read setting: {error}"))
+    }
+
+    pub fn set_setting(&self, key: &str, value: &str) -> Result<(), String> {
+        if key.trim().is_empty() || key.len() > 80 || value.len() > 4000 {
+            return Err("Setting key or value is invalid".to_string());
+        }
+        let connection = self.lock()?;
+        connection.execute("INSERT INTO settings (key, value, updated_at) VALUES (?1, ?2, CURRENT_TIMESTAMP) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP", params![key.trim(), value]).map_err(|error| format!("Could not save setting: {error}"))?;
+        Ok(())
+    }
+
     fn lock(&self) -> Result<std::sync::MutexGuard<'_, Connection>, String> {
         self.connection
             .lock()
@@ -176,17 +236,42 @@ mod tests {
     use super::*;
 
     fn sample(status: &str) -> StoredDownload {
-        StoredDownload { id: "test-download".into(), url: "https://example.com/file.bin".into(), filename: "file.bin".into(), destination: "Downloads".into(), status: status.into(), total_bytes: Some(100), downloaded_bytes: 10, content_type: Some("application/octet-stream".into()), supports_range: true, temp_path: None, final_path: None, error_message: None, speed_bps: 0, eta_seconds: 0, created_at: String::new(), updated_at: String::new() }
+        StoredDownload {
+            id: "test-download".into(),
+            url: "https://example.com/file.bin".into(),
+            filename: "file.bin".into(),
+            destination: "Downloads".into(),
+            status: status.into(),
+            total_bytes: Some(100),
+            downloaded_bytes: 10,
+            content_type: Some("application/octet-stream".into()),
+            supports_range: true,
+            temp_path: None,
+            final_path: None,
+            error_message: None,
+            speed_bps: 0,
+            eta_seconds: 0,
+            created_at: String::new(),
+            updated_at: String::new(),
+        }
     }
 
     #[test]
     fn transition_rules_accept_and_reject_expected_states() {
         let path = std::env::temp_dir().join(format!("zynero-test-{}", uuid::Uuid::new_v4()));
         let database = DatabaseState::open(path.clone()).expect("database opens");
-        database.insert_download(&sample("queued")).expect("insert succeeds");
-        database.transition_status("test-download", "active").expect("queued to active");
-        database.transition_status("test-download", "paused").expect("active to paused");
-        assert!(database.transition_status("test-download", "completed").is_err());
+        database
+            .insert_download(&sample("queued"))
+            .expect("insert succeeds");
+        database
+            .transition_status("test-download", "active")
+            .expect("queued to active");
+        database
+            .transition_status("test-download", "paused")
+            .expect("active to paused");
+        assert!(database
+            .transition_status("test-download", "completed")
+            .is_err());
         let _ = std::fs::remove_dir_all(path);
     }
 
@@ -194,9 +279,18 @@ mod tests {
     fn recovery_pauses_active_downloads() {
         let path = std::env::temp_dir().join(format!("zynero-recovery-{}", uuid::Uuid::new_v4()));
         let database = DatabaseState::open(path.clone()).expect("database opens");
-        database.insert_download(&sample("active")).expect("insert succeeds");
+        database
+            .insert_download(&sample("active"))
+            .expect("insert succeeds");
         database.recover_incomplete().expect("recovery succeeds");
-        assert_eq!(database.find_download("test-download").expect("query succeeds").expect("row exists").status, "paused");
+        assert_eq!(
+            database
+                .find_download("test-download")
+                .expect("query succeeds")
+                .expect("row exists")
+                .status,
+            "paused"
+        );
         let _ = std::fs::remove_dir_all(path);
     }
 }

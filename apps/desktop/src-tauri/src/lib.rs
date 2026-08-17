@@ -14,6 +14,10 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::add_download,
             commands::get_downloads,
+            commands::get_queues,
+            commands::save_queue,
+            commands::get_setting,
+            commands::set_setting,
             commands::inspect_url,
             commands::pause_download,
             commands::resume_download,

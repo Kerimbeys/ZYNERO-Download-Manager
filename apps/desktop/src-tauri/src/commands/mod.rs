@@ -1,5 +1,5 @@
 use crate::{
-    database::{DatabaseState, StoredDownload},
+    database::{DatabaseState, QueueRecord, StoredDownload},
     download::DownloadManager,
 };
 use reqwest::header::{ACCEPT_RANGES, CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE, RANGE};
@@ -92,6 +92,33 @@ pub async fn add_download(
 #[command]
 pub fn get_downloads(database: State<'_, DatabaseState>) -> Result<Vec<StoredDownload>, String> {
     database.list_downloads()
+}
+
+#[command]
+pub fn get_queues(database: State<'_, DatabaseState>) -> Result<Vec<QueueRecord>, String> {
+    database.list_queues()
+}
+
+#[command]
+pub fn save_queue(queue: QueueRecord, database: State<'_, DatabaseState>) -> Result<(), String> {
+    database.upsert_queue(&queue)
+}
+
+#[command]
+pub fn get_setting(
+    key: String,
+    database: State<'_, DatabaseState>,
+) -> Result<Option<String>, String> {
+    database.get_setting(&key)
+}
+
+#[command]
+pub fn set_setting(
+    key: String,
+    value: String,
+    database: State<'_, DatabaseState>,
+) -> Result<(), String> {
+    database.set_setting(&key, &value)
 }
 
 #[command]
