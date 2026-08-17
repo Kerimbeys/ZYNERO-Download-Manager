@@ -10,6 +10,8 @@ use std::time::Duration;
 
 use tauri::Manager;
 
+use crate::scheduler::{evaluate_window, ScheduleDecision};
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -55,7 +57,28 @@ pub fn run() {
                     .flatten()
                     .map(|value| value != "false")
                     .unwrap_or(true);
-                if auto_start {
+                let schedule_allows = scheduler_database
+                    .list_queues()
+                    .ok()
+                    .map(|queues| {
+                        let configured = queues
+                            .iter()
+                            .filter(|queue| queue.auto_start)
+                            .collect::<Vec<_>>();
+                        configured.is_empty()
+                            || configured.iter().any(|queue| {
+                                matches!(
+                                    evaluate_window(
+                                        chrono::Local::now(),
+                                        queue.start_at.as_deref(),
+                                        queue.stop_at.as_deref(),
+                                    ),
+                                    Ok(ScheduleDecision::Ready)
+                                )
+                            })
+                    })
+                    .unwrap_or(true);
+                if auto_start && schedule_allows {
                     let max_concurrent = scheduler_database
                         .get_setting("max_concurrent_downloads")
                         .ok()
