@@ -58,8 +58,8 @@
 
 ## F. Kuyruk, bildirim ve ayarlar
 
-- [-] F01 — Queue CRUD, priority, automatic start ve max concurrent downloads. Queue/settings SQLite CRUD ve Tauri commands eklendi; scheduler orchestration ve frontend ayar ekranı sonraki adım.
-- [-] F02 — Scheduler: başlangıç/duruş zamanı ve WAITING/QUEUED geçişleri. Queue schedule migration, RFC3339 window evaluator ve `evaluate_queue_schedule` IPC eklendi; otomatik queue worker geçişleri sonraki adım.
+- [x] F01 — Queue CRUD, priority, automatic start ve max concurrent downloads. Queue/settings SQLite CRUD, max concurrent kapasite hesabı, `start_queued_downloads` IPC ve 5 saniyelik auto-start runner eklendi.
+- [-] F02 — Scheduler: başlangıç/duruş zamanı ve WAITING/QUEUED geçişleri. Queue schedule migration, RFC3339 evaluator, `evaluate_queue_schedule` IPC ve auto-start runner eklendi; schedule window'a göre runner gating sonraki adım.
 - [ ] F03 — Windows completion/failure/queue notification'larını optional yap.
 - [-] F04 — General, Downloads, Connections, Notifications, Appearance, Privacy ve Advanced ayarlarını bağla. Downloads max concurrent/auto-start ayarları, Appearance tema seçenekleri ve `set_setting` IPC paneli eklendi; diğer ayar bölümleri sonraki adım.
 - [ ] F05 — Dosya kategorileri ve extension mapping'i ekle.
@@ -121,4 +121,5 @@
 | 2026-08-17 | F02 scheduler foundation | Devam ediyor | `0004_queue_schedule.sql`, RFC3339 schedule window evaluator ve `evaluate_queue_schedule` IPC eklendi; cargo check/typecheck/build başarılı; otomatik queue runner bekliyor |
 | 2026-08-17 | F04 settings foundation | Devam ediyor | Settings paneli, max concurrent/auto-start `set_setting` IPC ve tema seçenekleri eklendi; typecheck/build başarılı |
 | 2026-08-17 | D01 segment foundation | Devam ediyor | 1–32 bağlantı sınırları, contiguous byte-range planner ve boundary testleri eklendi; cargo check başarılı; worker entegrasyonu bekliyor |
+| 2026-08-17 | F01/F02 queue runner | Devam ediyor | `start_queued_downloads` IPC, max-concurrent kapasite hesabı ve 5 saniyelik auto-start runner eklendi; cargo check başarılı; schedule gating bekliyor |
 | 2026-08-17 | K01 reusable skill | Tamamlandı | `/home/ubuntu/skills/zynero-download-manager-development/SKILL.md`; `quick_validate.py` başarılı |

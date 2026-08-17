@@ -92,6 +92,21 @@ impl DownloadManager {
         Ok(())
     }
 
+    pub fn start_queued(&self, max_concurrent: i64) -> Result<usize, String> {
+        let active = self.database.count_active_downloads()?;
+        let capacity = (max_concurrent.clamp(1, 32) - active).max(0);
+        if capacity == 0 {
+            return Ok(0);
+        }
+        let queued = self.database.list_queued_downloads(capacity)?;
+        let mut started = 0;
+        for download in queued {
+            self.start(download)?;
+            started += 1;
+        }
+        Ok(started)
+    }
+
     pub fn pause(&self, id: &str) -> Result<(), String> {
         let controls = self
             .controls

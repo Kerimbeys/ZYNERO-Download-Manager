@@ -95,6 +95,27 @@ impl DatabaseState {
         Ok(())
     }
 
+    pub fn list_queued_downloads(&self, limit: i64) -> Result<Vec<StoredDownload>, String> {
+        let connection = self.lock()?;
+        let mut statement = connection.prepare("SELECT id, url, filename, destination, status, total_bytes, downloaded_bytes, content_type, supports_range, temp_path, final_path, error_message, speed_bps, eta_seconds, created_at, updated_at FROM downloads WHERE status = 'queued' ORDER BY created_at ASC LIMIT ?1").map_err(|error| format!("Could not prepare queued download query: {error}"))?;
+        let rows = statement
+            .query_map([limit.max(0)], row_to_download)
+            .map_err(|error| format!("Could not read queued downloads: {error}"))?;
+        rows.map(|row| row.map_err(|error| format!("Could not decode queued download: {error}")))
+            .collect()
+    }
+
+    pub fn count_active_downloads(&self) -> Result<i64, String> {
+        let connection = self.lock()?;
+        connection
+            .query_row(
+                "SELECT COUNT(*) FROM downloads WHERE status = 'active'",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|error| format!("Could not count active downloads: {error}"))
+    }
+
     pub fn list_downloads(&self) -> Result<Vec<StoredDownload>, String> {
         let connection = self.lock()?;
         let mut statement = connection.prepare("SELECT id, url, filename, destination, status, total_bytes, downloaded_bytes, content_type, supports_range, temp_path, final_path, error_message, speed_bps, eta_seconds, created_at, updated_at FROM downloads ORDER BY created_at DESC").map_err(|error| format!("Could not prepare download query: {error}"))?;

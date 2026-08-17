@@ -6,6 +6,8 @@ mod scheduler;
 mod security;
 mod utils;
 
+use std::time::Duration;
+
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -15,6 +17,7 @@ pub fn run() {
             commands::add_download,
             commands::get_downloads,
             commands::evaluate_queue_schedule,
+            commands::start_queued_downloads,
             commands::get_queues,
             commands::save_queue,
             commands::get_setting,
@@ -41,8 +44,28 @@ pub fn run() {
             manager
                 .set_app_handle(app.handle().clone())
                 .map_err(|error| Box::<dyn std::error::Error>::from(error))?;
-            app.manage(database);
-            app.manage(manager);
+            app.manage(database.clone());
+            app.manage(manager.clone());
+            let scheduler_database = database;
+            let scheduler_manager = manager;
+            std::thread::spawn(move || loop {
+                let auto_start = scheduler_database
+                    .get_setting("auto_start_downloads")
+                    .ok()
+                    .flatten()
+                    .map(|value| value != "false")
+                    .unwrap_or(true);
+                if auto_start {
+                    let max_concurrent = scheduler_database
+                        .get_setting("max_concurrent_downloads")
+                        .ok()
+                        .flatten()
+                        .and_then(|value| value.parse::<i64>().ok())
+                        .unwrap_or(3);
+                    let _ = scheduler_manager.start_queued(max_concurrent);
+                }
+                std::thread::sleep(Duration::from_secs(5));
+            });
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()

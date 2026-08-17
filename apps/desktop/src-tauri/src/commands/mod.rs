@@ -114,6 +114,19 @@ pub fn evaluate_queue_schedule(
 }
 
 #[command]
+pub fn start_queued_downloads(
+    database: State<'_, DatabaseState>,
+    manager: State<'_, DownloadManager>,
+) -> Result<usize, String> {
+    let max_concurrent = database
+        .get_setting("max_concurrent_downloads")?
+        .and_then(|value| value.parse::<i64>().ok())
+        .unwrap_or(3)
+        .clamp(1, 32);
+    manager.start_queued(max_concurrent)
+}
+
+#[command]
 pub fn get_queues(database: State<'_, DatabaseState>) -> Result<Vec<QueueRecord>, String> {
     database.list_queues()
 }
