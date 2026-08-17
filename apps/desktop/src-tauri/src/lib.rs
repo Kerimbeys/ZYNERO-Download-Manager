@@ -18,7 +18,9 @@ pub fn run() {
             commands::pause_download,
             commands::resume_download,
             commands::cancel_download,
-            commands::delete_download
+            commands::delete_download,
+            commands::open_download_file,
+            commands::open_download_folder
         ])
         .setup(|app| {
             let database = database::DatabaseState::open(
@@ -27,6 +29,9 @@ pub fn run() {
                     .map_err(|error| format!("Could not resolve app data directory: {error}"))?,
             )?;
             let manager = download::DownloadManager::new(database.clone())
+                .map_err(|error| Box::<dyn std::error::Error>::from(error))?;
+            manager
+                .set_app_handle(app.handle().clone())
                 .map_err(|error| Box::<dyn std::error::Error>::from(error))?;
             app.manage(database);
             app.manage(manager);

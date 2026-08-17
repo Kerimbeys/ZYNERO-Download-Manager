@@ -11,6 +11,7 @@ use std::{
     },
     time::{Duration, Instant},
 };
+use tauri::{AppHandle, Emitter};
 use tokio::{
     fs::{self, OpenOptions},
     io::AsyncWriteExt,
@@ -21,6 +22,7 @@ pub struct DownloadManager {
     database: DatabaseState,
     controls: Arc<Mutex<HashMap<String, Arc<Control>>>>,
     client: reqwest::Client,
+    app_handle: Arc<Mutex<Option<AppHandle>>>,
 }
 
 struct Control {
@@ -32,13 +34,31 @@ impl DownloadManager {
     pub fn new(database: DatabaseState) -> Result<Self, String> {
         let client = reqwest::Client::builder()
             .user_agent("ZYNERO/0.1.0")
+            .connect_timeout(Duration::from_secs(15))
+            .timeout(Duration::from_secs(60))
             .build()
             .map_err(|error| format!("Could not create download client: {error}"))?;
         Ok(Self {
             database,
             controls: Arc::new(Mutex::new(HashMap::new())),
             client,
+            app_handle: Arc::new(Mutex::new(None)),
         })
+    }
+
+    pub fn set_app_handle(&self, handle: AppHandle) -> Result<(), String> {
+        *self
+            .app_handle
+            .lock()
+            .map_err(|_| "Download manager lock poisoned".to_string())? = Some(handle);
+        Ok(())
+    }
+
+    fn emit_progress(&self, id: &str) {
+        let handle = self.app_handle.lock().ok().and_then(|value| value.clone());
+        if let (Some(handle), Ok(Some(download))) = (handle, self.database.find_download(id)) {
+            let _ = handle.emit("download-progress", download);
+        }
     }
 
     pub fn start(&self, download: StoredDownload) -> Result<(), String> {
@@ -62,6 +82,7 @@ impl DownloadManager {
                     0,
                     Some(&error),
                 );
+                manager.emit_progress(&download.id);
             }
             let _ = manager
                 .controls
@@ -182,6 +203,7 @@ impl DownloadManager {
                     eta,
                     None,
                 )?;
+                self.emit_progress(&download.id);
                 last_update = Instant::now();
             }
         }
@@ -199,6 +221,7 @@ impl DownloadManager {
             .map_err(|error| format!("Could not finalize download: {error}"))?;
         self.database
             .update_runtime(&download.id, "completed", downloaded, 0, 0, None)?;
+        self.emit_progress(&download.id);
         Ok(())
     }
 
@@ -207,14 +230,36 @@ impl DownloadManager {
         download: &StoredDownload,
         offset: i64,
     ) -> Result<reqwest::Response, String> {
-        let mut request = self.client.get(&download.url);
-        if offset > 0 && download.supports_range {
-            request = request.header(reqwest::header::RANGE, format!("bytes={offset}-"));
+        for attempt in 0..3u32 {
+            let mut request = self.client.get(&download.url);
+            if offset > 0 && download.supports_range {
+                request = request.header(reqwest::header::RANGE, format!("bytes={offset}-"));
+            }
+            match request.send().await {
+                Ok(response)
+                    if response.status().is_success() || response.status().as_u16() == 206 =>
+                {
+                    return Ok(response)
+                }
+                Ok(response)
+                    if (response.status().as_u16() == 408
+                        || response.status().as_u16() == 429
+                        || response.status().is_server_error())
+                        && attempt < 2 =>
+                {
+                    tokio::time::sleep(Duration::from_millis(250 * 2u64.pow(attempt))).await;
+                }
+                Ok(response) => return Ok(response),
+                Err(error) if attempt < 2 => {
+                    tokio::time::sleep(Duration::from_millis(250 * 2u64.pow(attempt))).await;
+                    if attempt == 2 {
+                        return Err(format!("Download request failed: {error}"));
+                    }
+                }
+                Err(error) => return Err(format!("Download request failed: {error}")),
+            }
         }
-        request
-            .send()
-            .await
-            .map_err(|error| format!("Download request failed: {error}"))
+        Err("Download request exhausted retry attempts".to_string())
     }
 }
 

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import {
   Archive,
   ArrowDownToLine,
@@ -120,7 +121,7 @@ function EmptyDownloads({ onAdd }: { onAdd: () => void }) {
   );
 }
 
-function DownloadCard({ item, onAction }: { item: DownloadItem; onAction: (action: "pause" | "resume" | "cancel" | "delete") => Promise<void> }) {
+function DownloadCard({ item, onAction }: { item: DownloadItem; onAction: (action: "pause" | "resume" | "cancel" | "delete" | "openFile" | "openFolder") => Promise<void> }) {
   const progress = item.size > 0 ? Math.min(100, Math.round((item.downloaded / item.size) * 100)) : 0;
   const isPaused = item.status === "queued" || item.status === "paused";
   const isFinished = item.status === "completed" || item.status === "cancelled";
@@ -133,6 +134,7 @@ function DownloadCard({ item, onAction }: { item: DownloadItem; onAction: (actio
           <strong>{item.name}</strong>
           <span>{item.url}</span>
         </div>
+        {isFinished && <button className="icon-button" type="button" aria-label="Open download folder" onClick={() => void onAction("openFolder")}><FolderOpen size={17} /></button>}
         <button className="icon-button" type="button" aria-label="Delete download" onClick={() => void onAction("delete")}><Trash2 size={17} /></button>
       </div>
       <div className="download-card__progress-row"><span>{progress}%</span><span>{formatBytes(item.downloaded)} of {formatBytes(item.size)}</span></div>
@@ -203,6 +205,19 @@ function App() {
     return () => window.clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    if (!("__TAURI_INTERNALS__" in window)) return;
+    let unlisten: (() => void) | undefined;
+    void listen<StoredDownload>("download-progress", (event) => {
+      const row = event.payload;
+      setDownloads((current) => {
+        const next = { id: row.id, name: row.filename, url: row.url, size: row.totalBytes ?? 0, downloaded: row.downloadedBytes, speed: row.speedBps ?? 0, etaSeconds: row.etaSeconds ?? 0, status: row.status === "active" ? "active" : row.status === "completed" ? "completed" : row.status === "failed" ? "failed" : row.status === "paused" ? "paused" : row.status === "cancelled" ? "cancelled" : "queued", connections: 1, destination: row.destination } as DownloadItem;
+        return current.some((item) => item.id === row.id) ? current.map((item) => item.id === row.id ? next : item) : [next, ...current];
+      });
+    }).then((remove) => { unlisten = remove; });
+    return () => { unlisten?.(); };
+  }, []);
+
   const filteredDownloads = useMemo(() => downloads.filter((item) => item.name.toLowerCase().includes(search.toLowerCase())), [downloads, search]);
   const mapStoredDownload = (row: StoredDownload): DownloadItem => ({
     id: row.id, name: row.filename, url: row.url, size: row.totalBytes ?? 0, downloaded: row.downloadedBytes,
@@ -210,10 +225,11 @@ function App() {
     status: row.status === "active" ? "active" : row.status === "completed" ? "completed" : row.status === "failed" ? "failed" : row.status === "paused" ? "paused" : row.status === "cancelled" ? "cancelled" : "queued",
     connections: 1, destination: row.destination,
   });
-  const handleAction = async (id: string, action: "pause" | "resume" | "cancel" | "delete") => {
+  const handleAction = async (id: string, action: "pause" | "resume" | "cancel" | "delete" | "openFile" | "openFolder") => {
     if (!("__TAURI_INTERNALS__" in window)) throw new Error("Open ZYNERO desktop to control downloads.");
-    const command = action === "pause" ? "pause_download" : action === "resume" ? "resume_download" : action === "cancel" ? "cancel_download" : "delete_download";
+    const command = action === "pause" ? "pause_download" : action === "resume" ? "resume_download" : action === "cancel" ? "cancel_download" : action === "delete" ? "delete_download" : action === "openFile" ? "open_download_file" : "open_download_folder";
     await invoke(command, { id });
+    if (action === "openFile" || action === "openFolder") { setToast(action === "openFile" ? "Opened downloaded file." : "Opened download folder."); return; }
     if (action === "delete") setDownloads((current) => current.filter((item) => item.id !== id));
     else if (action === "pause") setDownloads((current) => current.map((item) => item.id === id ? { ...item, status: "paused" } : item));
     else if (action === "cancel") setDownloads((current) => current.map((item) => item.id === id ? { ...item, status: "cancelled" } : item));

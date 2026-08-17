@@ -29,10 +29,10 @@
 - [x] C03 — Tek bağlantılı streaming HTTP/HTTPS download worker'ını yaz; büyük dosyayı RAM'e alma. Reqwest byte stream ve async temp file worker eklendi.
 - [x] C04 — Güvenli geçici dosya ve hedef path oluşturma; traversal ve overwrite kontrollerini ekle. `.zynero.part`, Downloads/Desktop/Documents root çözümleme ve çakışmada unique filename eklendi.
 - [x] C05 — Gerçek progress, speed ve ETA hesaplamasını hareketli ortalama ile ekle. Persisted downloaded bytes, speed B/s ve ETA snapshot'ları 250 ms aralıkla SQLite'a yazılıyor; Dashboard 1 saniyede yenileniyor.
-- [-] C06 — Tauri command/event akışını bağla: add, get, pause, resume, cancel, delete, progress. Add/get/pause/resume/cancel/delete command'ları ve Dashboard polling bağlı; Tauri event stream sonraki iyileştirme.
+- [x] C06 — Tauri command/event akışını bağla: add, get, pause, resume, cancel, delete, progress. Lifecycle command'ları, `download-progress` Tauri event'i ve Dashboard listener/polling bağlı.
 - [x] C07 — Gerçek pause: request cancellation, offset persist ve SQLite state update. Worker control flag ile stream'i durduruyor; temp file boyutu ve paused state kalıcı.
 - [x] C08 — Gerçek resume: persisted offset'ten devam et; destek yoksa açık hata/fallback davranışı uygula. Range destekliyse offset header kullanılıyor; 206 dönmezse sıfırdan güvenli fallback yapılıyor.
-- [ ] C09 — Retry/backoff, timeout, HTTP hata sınıfları ve insan okunabilir hata mesajlarını ekle.
+- [x] C09 — Retry/backoff, timeout, HTTP hata sınıfları ve insan okunabilir hata mesajlarını ekle. 3 denemeli exponential backoff, connect/request timeout ve transient HTTP status handling eklendi.
 - [ ] C10 — Local HTTP test server ile HTTP, pause/resume, restart recovery ve failure integration testlerini yaz.
 - [ ] C11 — İlk dikey milestone'u uçtan uca doğrula ve `feat(core): add resumable downloads` commit'ini oluştur.
 
@@ -52,7 +52,7 @@
 - [x] E03 — Download card: progress, bytes, speed, ETA, connection count, status ve eylemler. Backend tipine hazır DownloadCard bileşeni ve durum görselleri eklendi.
 - [x] E04 — Add Download penceresini gerçek `add_download` command'ına bağla. Frontend `invoke` çağrısı, Rust request/response modeli ve hata gösterimi eklendi.
 - [ ] E05 — Active, Completed, Queued, Scheduled, Failed ve History görünümlerini ekle.
-- [-] E06 — Pause/resume/cancel/delete/open file/open folder eylemlerini IPC'ye bağla. Pause/resume/cancel/delete gerçek IPC'ye bağlandı; open file/open folder sonraki adım.
+- [x] E06 — Pause/resume/cancel/delete/open file/open folder eylemlerini IPC'ye bağla. Tüm temel download lifecycle ve Windows Explorer file/folder command'ları frontend'e bağlandı.
 - [-] E07 — Light/dark/system tema desteğini ekle; aşırı gradient/glass kullanımından kaçın. Midnight, Graphite ve Dawn token varyantları ile tema seçici eklendi; system preference entegrasyonu sonraki adım.
 - [ ] E08 — UI testleri: add, pause, resume, delete ve settings.
 
@@ -113,5 +113,5 @@
 | 2026-08-17 | E07 tema özelleştirmesi | Devam ediyor | Midnight, Graphite ve Dawn token varyantları ile seçici eklendi; system theme ve kalıcı ayar bekliyor |
 | 2026-08-17 | B01-B03/C02/E02 data layer | Tamamlandı | SQLite startup/migration, repository CRUD, HEAD/Range metadata ve Dashboard `get_downloads` entegrasyonu; cargo check/typecheck/build başarılı |
 | 2026-08-17 | C03-C05 download worker | Tamamlandı | Async reqwest streaming, `.zynero.part` temp dosyası, unique final path, Range resume, persisted progress/speed/ETA; cargo check başarılı |
-| 2026-08-17 | E06 lifecycle IPC | Devam ediyor | pause/resume/cancel/delete IPC ve Dashboard polling bağlı; open file/open folder ve event stream bekliyor |
+| 2026-08-17 | E06 lifecycle IPC | Tamamlandı | pause/resume/cancel/delete/open file/open folder IPC, Tauri progress event listener ve polling fallback; cargo check/typecheck/build başarılı |
 | 2026-08-17 | K01 reusable skill | Tamamlandı | `/home/ubuntu/skills/zynero-download-manager-development/SKILL.md`; `quick_validate.py` başarılı |

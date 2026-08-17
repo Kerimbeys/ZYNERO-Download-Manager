@@ -4,6 +4,7 @@ use crate::{
 };
 use reqwest::header::{ACCEPT_RANGES, CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE, RANGE};
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 use tauri::{command, State};
 use url::Url;
 use uuid::Uuid;
@@ -116,6 +117,49 @@ pub fn resume_download(
 #[command]
 pub fn cancel_download(id: String, manager: State<'_, DownloadManager>) -> Result<(), String> {
     manager.cancel(&id)
+}
+
+#[command]
+pub fn open_download_file(id: String, database: State<'_, DatabaseState>) -> Result<(), String> {
+    let download = database
+        .find_download(&id)?
+        .ok_or_else(|| "Download not found".to_string())?;
+    let path = download
+        .final_path
+        .ok_or_else(|| "Download has no finalized file".to_string())?;
+    if !Path::new(&path).is_file() {
+        return Err("Finalized file does not exist".to_string());
+    }
+    #[cfg(target_os = "windows")]
+    std::process::Command::new("explorer.exe")
+        .args(["/select,", &path])
+        .spawn()
+        .map_err(|error| format!("Could not open file: {error}"))?;
+    #[cfg(not(target_os = "windows"))]
+    return Err("Opening files is currently supported on Windows only".to_string());
+    Ok(())
+}
+
+#[command]
+pub fn open_download_folder(id: String, database: State<'_, DatabaseState>) -> Result<(), String> {
+    let download = database
+        .find_download(&id)?
+        .ok_or_else(|| "Download not found".to_string())?;
+    let path = download
+        .final_path
+        .or(download.temp_path)
+        .ok_or_else(|| "Download has no file path".to_string())?;
+    let folder = Path::new(&path)
+        .parent()
+        .ok_or_else(|| "Could not resolve download folder".to_string())?;
+    #[cfg(target_os = "windows")]
+    std::process::Command::new("explorer.exe")
+        .arg(folder)
+        .spawn()
+        .map_err(|error| format!("Could not open folder: {error}"))?;
+    #[cfg(not(target_os = "windows"))]
+    return Err("Opening folders is currently supported on Windows only".to_string());
+    Ok(())
 }
 
 #[command]
