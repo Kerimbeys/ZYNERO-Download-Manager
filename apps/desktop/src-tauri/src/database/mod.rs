@@ -42,6 +42,8 @@ pub struct QueueRecord {
     pub priority: i64,
     pub max_concurrent: i64,
     pub auto_start: bool,
+    pub start_at: Option<String>,
+    pub stop_at: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -71,6 +73,14 @@ impl DatabaseState {
                 "../../migrations/0003_queues_segments_settings.sql"
             ))
             .map_err(|error| format!("Could not run queue/settings migration: {error}"))?;
+        if let Err(error) =
+            connection.execute_batch(include_str!("../../migrations/0004_queue_schedule.sql"))
+        {
+            let message = error.to_string();
+            if !message.contains("duplicate column name") {
+                return Err(format!("Could not run queue schedule migration: {message}"));
+            }
+        }
         Ok(Self {
             connection: Arc::new(Mutex::new(connection)),
         })
@@ -178,7 +188,7 @@ impl DatabaseState {
 
     pub fn list_queues(&self) -> Result<Vec<QueueRecord>, String> {
         let connection = self.lock()?;
-        let mut statement = connection.prepare("SELECT id, name, priority, max_concurrent, auto_start, created_at, updated_at FROM queues ORDER BY priority DESC, created_at ASC").map_err(|error| format!("Could not prepare queue query: {error}"))?;
+        let mut statement = connection.prepare("SELECT id, name, priority, max_concurrent, auto_start, start_at, stop_at, created_at, updated_at FROM queues ORDER BY priority DESC, created_at ASC").map_err(|error| format!("Could not prepare queue query: {error}"))?;
         let rows = statement
             .query_map([], |row| {
                 Ok(QueueRecord {
@@ -187,8 +197,10 @@ impl DatabaseState {
                     priority: row.get(2)?,
                     max_concurrent: row.get(3)?,
                     auto_start: row.get::<_, i64>(4)? != 0,
-                    created_at: row.get(5)?,
-                    updated_at: row.get(6)?,
+                    start_at: row.get(5)?,
+                    stop_at: row.get(6)?,
+                    created_at: row.get(7)?,
+                    updated_at: row.get(8)?,
                 })
             })
             .map_err(|error| format!("Could not read queues: {error}"))?;
@@ -201,7 +213,7 @@ impl DatabaseState {
             return Err("Queue name and max concurrent downloads are invalid".to_string());
         }
         let connection = self.lock()?;
-        connection.execute("INSERT INTO queues (id, name, priority, max_concurrent, auto_start, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) ON CONFLICT(id) DO UPDATE SET name = excluded.name, priority = excluded.priority, max_concurrent = excluded.max_concurrent, auto_start = excluded.auto_start, updated_at = CURRENT_TIMESTAMP", params![queue.id, queue.name.trim(), queue.priority, queue.max_concurrent, queue.auto_start as i64]).map_err(|error| format!("Could not save queue: {error}"))?;
+        connection.execute("INSERT INTO queues (id, name, priority, max_concurrent, auto_start, start_at, stop_at, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) ON CONFLICT(id) DO UPDATE SET name = excluded.name, priority = excluded.priority, max_concurrent = excluded.max_concurrent, auto_start = excluded.auto_start, start_at = excluded.start_at, stop_at = excluded.stop_at, updated_at = CURRENT_TIMESTAMP", params![queue.id, queue.name.trim(), queue.priority, queue.max_concurrent, queue.auto_start as i64, queue.start_at, queue.stop_at]).map_err(|error| format!("Could not save queue: {error}"))?;
         Ok(())
     }
 

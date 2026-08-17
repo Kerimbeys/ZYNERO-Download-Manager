@@ -1,6 +1,7 @@
 use crate::{
     database::{DatabaseState, QueueRecord, StoredDownload},
     download::DownloadManager,
+    scheduler::{evaluate_window, ScheduleDecision},
 };
 use reqwest::header::{ACCEPT_RANGES, CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE, RANGE};
 use serde::{Deserialize, Serialize};
@@ -92,6 +93,24 @@ pub async fn add_download(
 #[command]
 pub fn get_downloads(database: State<'_, DatabaseState>) -> Result<Vec<StoredDownload>, String> {
     database.list_downloads()
+}
+
+#[command]
+pub fn evaluate_queue_schedule(
+    start_at: Option<String>,
+    stop_at: Option<String>,
+) -> Result<String, String> {
+    let decision = evaluate_window(
+        chrono::Local::now(),
+        start_at.as_deref(),
+        stop_at.as_deref(),
+    )?;
+    Ok(match decision {
+        ScheduleDecision::Waiting => "waiting",
+        ScheduleDecision::Ready => "ready",
+        ScheduleDecision::Expired => "expired",
+    }
+    .to_string())
 }
 
 #[command]
