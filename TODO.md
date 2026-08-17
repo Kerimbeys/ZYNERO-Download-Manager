@@ -16,16 +16,16 @@
 
 ## B. Kalıcı veri katmanı
 
-- [ ] B01 — SQLite bağlantı ve uygulama veri dizini yönetimini ekle.
-- [ ] B02 — `downloads`, `segments`, `queues`, `settings` migrations oluştur.
-- [ ] B03 — Repository katmanını yaz; frontend memory yerine gerçek CRUD kullan.
+- [x] B01 — SQLite bağlantı ve uygulama veri dizini yönetimini ekle. `DatabaseState` uygulama data directory altında `zynero.sqlite3` açıyor ve startup'ta yönetiliyor.
+- [-] B02 — `downloads`, `segments`, `queues`, `settings` migrations oluştur. İlk `downloads` migration'ı ve status/created_at indexleri eklendi; segment/queue/settings şemaları sonraki migration'lara bırakıldı.
+- [x] B03 — Repository katmanını yaz; frontend memory yerine gerçek CRUD kullan. `insert_download`, `list_downloads` ve `find_download` repository metotları eklendi; Dashboard `get_downloads` ile SQLite'dan besleniyor.
 - [ ] B04 — Download state transition kurallarını tanımla ve unit testlerini yaz.
 - [ ] B05 — Startup recovery için yarım kalan indirmeleri güvenli biçimde yükle.
 
 ## C. İlk gerçek indirme dilimi — en yüksek öncelik
 
 - [x] C01 — URL doğrulama, protocol kontrolü ve güvenli filename çıkarımı. `add_download` command HTTP/HTTPS, host, embedded credential ve güvenli filename kontrollerini yapıyor.
-- [ ] C02 — HEAD/ilk GET metadata tespiti: content length, content type ve Range capability.
+- [x] C02 — HEAD/ilk GET metadata tespiti: content length, content type ve Range capability. `inspect_url` HEAD + `Range: bytes=0-0` fallback ile Content-Length/Content-Range/Content-Type/Accept-Ranges okuyor.
 - [ ] C03 — Tek bağlantılı streaming HTTP/HTTPS download worker'ını yaz; büyük dosyayı RAM'e alma.
 - [ ] C04 — Güvenli geçici dosya ve hedef path oluşturma; traversal ve overwrite kontrollerini ekle.
 - [ ] C05 — Gerçek progress, speed ve ETA hesaplamasını hareketli ortalama ile ekle.
@@ -48,7 +48,7 @@
 ## E. React masaüstü arayüzü
 
 - [x] E01 — Windows 11 esintili responsive shell ve sidebar oluştur. Responsive sidebar, workspace navigasyonu, storage kartı ve temel uygulama shell'i eklendi.
-- [ ] E02 — Dashboard'u yalnızca gerçek Rust/SQLite verileriyle besle.
+- [x] E02 — Dashboard'u yalnızca gerçek Rust/SQLite verileriyle besle. Uygulama açılışında `get_downloads` IPC çağrısı ile persisted kayıtlar yükleniyor; mock download kullanılmıyor.
 - [x] E03 — Download card: progress, bytes, speed, ETA, connection count, status ve eylemler. Backend tipine hazır DownloadCard bileşeni ve durum görselleri eklendi.
 - [x] E04 — Add Download penceresini gerçek `add_download` command'ına bağla. Frontend `invoke` çağrısı, Rust request/response modeli ve hata gösterimi eklendi.
 - [ ] E05 — Active, Completed, Queued, Scheduled, Failed ve History görünümlerini ekle.
@@ -95,6 +95,10 @@
 
 - [x] J01 — `Kerimbeys/ZYNERO-Download-Manager` GitHub repository'sini doğrula, yerel `main` branch'ini bağla ve ilk commit'leri pushla.
 
+## K. Yeniden kullanılabilir beceri
+
+- [x] K01 — ZYNERO Tauri/Rust/SQLite geliştirme sürecini reusable skill'e dönüştür; `/home/ubuntu/skills/zynero-download-manager-development/SKILL.md` oluştur ve doğrula.
+
 ## Günlük ilerleme kaydı
 
 | Tarih | Görev | Sonuç | Doğrulama |
@@ -107,3 +111,5 @@
 | 2026-08-17 | E01/E03 frontend bileşenleri | Tamamlandı | Responsive Dashboard shell, sidebar, stats, search/filter toolbar, empty state, DownloadCard ve Add Download modalı; typecheck/build başarılı |
 | 2026-08-17 | C01/E04 IPC entegrasyonu | Tamamlandı | Rust `add_download` command, güvenli URL/filename validation, frontend `invoke` bağlantısı; `cargo check`, typecheck ve build başarılı |
 | 2026-08-17 | E07 tema özelleştirmesi | Devam ediyor | Midnight, Graphite ve Dawn token varyantları ile seçici eklendi; system theme ve kalıcı ayar bekliyor |
+| 2026-08-17 | B01-B03/C02/E02 data layer | Tamamlandı | SQLite startup/migration, repository CRUD, HEAD/Range metadata ve Dashboard `get_downloads` entegrasyonu; cargo check/typecheck/build başarılı |
+| 2026-08-17 | K01 reusable skill | Tamamlandı | `/home/ubuntu/skills/zynero-download-manager-development/SKILL.md`; `quick_validate.py` başarılı |

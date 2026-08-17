@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   Archive,
@@ -41,6 +41,18 @@ type DownloadItem = {
   status: DownloadStatus;
   connections: number;
   destination: string;
+};
+
+type StoredDownload = {
+  id: string;
+  url: string;
+  filename: string;
+  destination: string;
+  status: string;
+  totalBytes: number | null;
+  downloadedBytes: number;
+  contentType: string | null;
+  supportsRange: boolean;
 };
 
 type NavItem = {
@@ -169,15 +181,33 @@ function App() {
   const [downloads, setDownloads] = useState<DownloadItem[]>([]);
   const [toast, setToast] = useState("");
 
+  useEffect(() => {
+    if (!("__TAURI_INTERNALS__" in window)) return;
+    void invoke<StoredDownload[]>("get_downloads")
+      .then((rows) => setDownloads(rows.map((row) => ({
+        id: row.id,
+        name: row.filename,
+        url: row.url,
+        size: row.totalBytes ?? 0,
+        downloaded: row.downloadedBytes,
+        speed: 0,
+        etaSeconds: 0,
+        status: row.status === "active" ? "active" : row.status === "completed" ? "completed" : row.status === "failed" ? "failed" : "queued",
+        connections: 1,
+        destination: row.destination,
+      }))))
+      .catch(() => setToast("Could not load downloads from SQLite."));
+  }, []);
+
   const filteredDownloads = useMemo(() => downloads.filter((item) => item.name.toLowerCase().includes(search.toLowerCase())), [downloads, search]);
   const handleSubmit = async (url: string, destination: string) => {
     if (!("__TAURI_INTERNALS__" in window)) {
       throw new Error("Open ZYNERO desktop to start a real download.");
     }
-    const result = await invoke<{ id: string; url: string; filename: string; destination: string; status: DownloadStatus }>("add_download", {
+    const result = await invoke<{ id: string; url: string; filename: string; destination: string; status: DownloadStatus; totalBytes: number | null }>("add_download", {
       request: { url, destination },
     });
-    setDownloads((current) => [{ id: result.id, name: result.filename, url: result.url, size: 0, downloaded: 0, speed: 0, etaSeconds: 0, status: result.status, connections: 1, destination: result.destination }, ...current]);
+    setDownloads((current) => [{ id: result.id, name: result.filename, url: result.url, size: result.totalBytes ?? 0, downloaded: 0, speed: 0, etaSeconds: 0, status: result.status, connections: 1, destination: result.destination }, ...current]);
     setModalOpen(false);
     setToast("Download queued by the Rust engine.");
     window.setTimeout(() => setToast(""), 4200);

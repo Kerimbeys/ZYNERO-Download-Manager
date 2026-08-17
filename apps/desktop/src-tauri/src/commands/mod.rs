@@ -1,5 +1,7 @@
+use crate::database::{DatabaseState, StoredDownload};
+use reqwest::header::{ACCEPT_RANGES, CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE, RANGE};
 use serde::{Deserialize, Serialize};
-use tauri::command;
+use tauri::{command, State};
 use url::Url;
 use uuid::Uuid;
 
@@ -12,29 +14,153 @@ pub struct AddDownloadRequest {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct RemoteMetadata {
+    pub url: String,
+    pub total_bytes: Option<i64>,
+    pub content_type: Option<String>,
+    pub supports_range: bool,
+    pub status_code: u16,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DownloadInfo {
     pub id: String,
     pub url: String,
     pub filename: String,
     pub destination: String,
     pub status: String,
+    pub total_bytes: Option<i64>,
+    pub content_type: Option<String>,
+    pub supports_range: bool,
 }
 
-/// Validates the URL and creates the first durable-domain download record.
-/// Actual streaming I/O will be added by the download worker milestone.
 #[command]
-pub fn add_download(request: AddDownloadRequest) -> Result<DownloadInfo, String> {
+pub async fn inspect_url(url: String) -> Result<RemoteMetadata, String> {
+    let url = validate_url(&url)?;
+    inspect_remote_url(url).await
+}
+
+#[command]
+pub async fn add_download(
+    request: AddDownloadRequest,
+    database: State<'_, DatabaseState>,
+) -> Result<DownloadInfo, String> {
     let url = validate_url(&request.url)?;
     let destination = validate_destination(&request.destination)?;
     let filename = filename_from_url(&url);
-
-    Ok(DownloadInfo {
+    let metadata = inspect_remote_url(url.clone()).await?;
+    let download = DownloadInfo {
         id: Uuid::new_v4().to_string(),
-        url: url.to_string(),
+        url: metadata.url.clone(),
         filename,
         destination,
         status: "queued".to_string(),
+        total_bytes: metadata.total_bytes,
+        content_type: metadata.content_type.clone(),
+        supports_range: metadata.supports_range,
+    };
+
+    database.insert_download(&StoredDownload {
+        id: download.id.clone(),
+        url: download.url.clone(),
+        filename: download.filename.clone(),
+        destination: download.destination.clone(),
+        status: download.status.clone(),
+        total_bytes: download.total_bytes,
+        downloaded_bytes: 0,
+        content_type: download.content_type.clone(),
+        supports_range: download.supports_range,
+        created_at: String::new(),
+        updated_at: String::new(),
+    })?;
+    Ok(download)
+}
+
+#[command]
+pub fn get_downloads(database: State<'_, DatabaseState>) -> Result<Vec<StoredDownload>, String> {
+    database.list_downloads()
+}
+
+async fn inspect_remote_url(url: Url) -> Result<RemoteMetadata, String> {
+    let client = reqwest::Client::builder()
+        .user_agent("ZYNERO/0.1.0")
+        .build()
+        .map_err(|error| format!("Could not create HTTP client: {error}"))?;
+    let head_response = client
+        .head(url.clone())
+        .send()
+        .await
+        .map_err(|error| format!("Metadata request failed: {error}"))?;
+    if head_response.status().is_client_error() || head_response.status().is_server_error() {
+        return Err(format!(
+            "Remote server returned HTTP {}",
+            head_response.status().as_u16()
+        ));
+    }
+
+    let mut total_bytes = parse_content_length(&head_response);
+    let mut content_type = header_string(&head_response, CONTENT_TYPE);
+    let mut supports_range = header_string(&head_response, ACCEPT_RANGES)
+        .is_some_and(|value| value.eq_ignore_ascii_case("bytes"));
+    let mut status_code = head_response.status().as_u16();
+
+    if total_bytes.is_none() || !supports_range {
+        let range_response = client
+            .get(url.clone())
+            .header(RANGE, "bytes=0-0")
+            .send()
+            .await
+            .map_err(|error| format!("Range metadata request failed: {error}"))?;
+        if range_response.status().is_client_error() || range_response.status().is_server_error() {
+            return Err(format!(
+                "Remote server returned HTTP {}",
+                range_response.status().as_u16()
+            ));
+        }
+        total_bytes = total_bytes.or_else(|| parse_content_range_total(&range_response));
+        content_type = content_type.or_else(|| header_string(&range_response, CONTENT_TYPE));
+        supports_range = supports_range
+            || range_response.status().as_u16() == 206
+            || header_string(&range_response, ACCEPT_RANGES)
+                .is_some_and(|value| value.eq_ignore_ascii_case("bytes"));
+        status_code = range_response.status().as_u16();
+    }
+
+    Ok(RemoteMetadata {
+        url: url.to_string(),
+        total_bytes,
+        content_type,
+        supports_range,
+        status_code,
     })
+}
+
+fn parse_content_length(response: &reqwest::Response) -> Option<i64> {
+    response
+        .headers()
+        .get(CONTENT_LENGTH)?
+        .to_str()
+        .ok()?
+        .parse()
+        .ok()
+}
+
+fn parse_content_range_total(response: &reqwest::Response) -> Option<i64> {
+    let value = response.headers().get(CONTENT_RANGE)?.to_str().ok()?;
+    value.split('/').nth(1)?.parse().ok()
+}
+
+fn header_string(
+    response: &reqwest::Response,
+    name: reqwest::header::HeaderName,
+) -> Option<String> {
+    response
+        .headers()
+        .get(name)?
+        .to_str()
+        .ok()
+        .map(ToOwned::to_owned)
 }
 
 fn validate_url(raw_url: &str) -> Result<Url, String> {
@@ -42,7 +168,6 @@ fn validate_url(raw_url: &str) -> Result<Url, String> {
     if trimmed.is_empty() {
         return Err("URL is required".to_string());
     }
-
     let parsed = Url::parse(trimmed).map_err(|_| "Enter a valid URL".to_string())?;
     if !matches!(parsed.scheme(), "http" | "https") {
         return Err("Only HTTP and HTTPS URLs are supported".to_string());
@@ -50,10 +175,9 @@ fn validate_url(raw_url: &str) -> Result<Url, String> {
     if parsed.host_str().is_none() {
         return Err("URL must include a host".to_string());
     }
-    if parsed.username() != "" || parsed.password().is_some() {
+    if !parsed.username().is_empty() || parsed.password().is_some() {
         return Err("URLs with embedded credentials are not allowed".to_string());
     }
-
     Ok(parsed)
 }
 
@@ -72,8 +196,18 @@ fn filename_from_url(url: &Url) -> String {
     let decoded = percent_encoding::percent_decode_str(candidate).decode_utf8_lossy();
     let sanitized: String = decoded
         .chars()
-        .map(|character| if "<>:\"/\\|?*".contains(character) || character.is_control() { '_' } else { character })
+        .map(|character| {
+            if "<>:\"/\\|?*".contains(character) || character.is_control() {
+                '_'
+            } else {
+                character
+            }
+        })
         .collect();
     let sanitized = sanitized.trim_matches('.').trim();
-    if sanitized.is_empty() { "download".to_string() } else { sanitized.chars().take(180).collect() }
+    if sanitized.is_empty() {
+        "download".to_string()
+    } else {
+        sanitized.chars().take(180).collect()
+    }
 }
