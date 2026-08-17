@@ -28,7 +28,7 @@ import {
 } from "lucide-react";
 import "./styles.css";
 
-type DownloadStatus = "active" | "queued" | "completed" | "failed";
+type DownloadStatus = "active" | "queued" | "paused" | "completed" | "failed" | "cancelled";
 
 type DownloadItem = {
   id: string;
@@ -53,6 +53,11 @@ type StoredDownload = {
   downloadedBytes: number;
   contentType: string | null;
   supportsRange: boolean;
+  tempPath: string | null;
+  finalPath: string | null;
+  errorMessage: string | null;
+  speedBps: number;
+  etaSeconds: number;
 };
 
 type NavItem = {
@@ -115,9 +120,11 @@ function EmptyDownloads({ onAdd }: { onAdd: () => void }) {
   );
 }
 
-function DownloadCard({ item }: { item: DownloadItem }) {
-  const progress = item.size > 0 ? Math.round((item.downloaded / item.size) * 100) : 0;
-  const isPaused = item.status === "queued";
+function DownloadCard({ item, onAction }: { item: DownloadItem; onAction: (action: "pause" | "resume" | "cancel" | "delete") => Promise<void> }) {
+  const progress = item.size > 0 ? Math.min(100, Math.round((item.downloaded / item.size) * 100)) : 0;
+  const isPaused = item.status === "queued" || item.status === "paused";
+  const isFinished = item.status === "completed" || item.status === "cancelled";
+  const statusLabel = item.status === "paused" ? "Paused" : item.status === "completed" ? "Completed" : item.status === "failed" ? "Failed" : item.status === "cancelled" ? "Cancelled" : item.status === "queued" ? "Queued" : "Downloading";
   return (
     <article className="download-card">
       <div className="download-card__header">
@@ -126,14 +133,15 @@ function DownloadCard({ item }: { item: DownloadItem }) {
           <strong>{item.name}</strong>
           <span>{item.url}</span>
         </div>
-        <button className="icon-button" type="button" aria-label="More download actions"><MoreHorizontal size={19} /></button>
+        <button className="icon-button" type="button" aria-label="Delete download" onClick={() => void onAction("delete")}><Trash2 size={17} /></button>
       </div>
       <div className="download-card__progress-row"><span>{progress}%</span><span>{formatBytes(item.downloaded)} of {formatBytes(item.size)}</span></div>
       <div className="progress-track"><span style={{ width: `${progress}%` }} /></div>
       <div className="download-card__footer">
-        <span className="status-pill"><span className={`status-dot status-dot--${item.status}`} />{isPaused ? "Queued" : "Downloading"}</span>
+        <span className="status-pill"><span className={`status-dot status-dot--${item.status}`} />{statusLabel}</span>
         <span>{formatSpeed(item.speed)}</span><span>ETA {formatEta(item.etaSeconds)}</span><span>{item.connections} connections</span>
-        <button className="icon-button icon-button--small" type="button" aria-label={isPaused ? "Resume download" : "Pause download"}>{isPaused ? <Play size={15} /> : <Pause size={15} />}</button>
+        {!isFinished && <button className="icon-button icon-button--small" type="button" aria-label={isPaused ? "Resume download" : "Pause download"} onClick={() => void onAction(isPaused ? "resume" : "pause")}>{isPaused ? <Play size={15} /> : <Pause size={15} />}</button>}
+        {!isFinished && !isPaused && <button className="icon-button icon-button--small" type="button" aria-label="Cancel download" onClick={() => void onAction("cancel")}><X size={15} /></button>}
       </div>
     </article>
   );
@@ -184,22 +192,33 @@ function App() {
   useEffect(() => {
     if (!("__TAURI_INTERNALS__" in window)) return;
     void invoke<StoredDownload[]>("get_downloads")
-      .then((rows) => setDownloads(rows.map((row) => ({
-        id: row.id,
-        name: row.filename,
-        url: row.url,
-        size: row.totalBytes ?? 0,
-        downloaded: row.downloadedBytes,
-        speed: 0,
-        etaSeconds: 0,
-        status: row.status === "active" ? "active" : row.status === "completed" ? "completed" : row.status === "failed" ? "failed" : "queued",
-        connections: 1,
-        destination: row.destination,
-      }))))
+      .then((rows) => setDownloads(rows.map((row) => ({ id: row.id, name: row.filename, url: row.url, size: row.totalBytes ?? 0, downloaded: row.downloadedBytes, speed: row.speedBps ?? 0, etaSeconds: row.etaSeconds ?? 0, status: row.status === "active" ? "active" : row.status === "completed" ? "completed" : row.status === "failed" ? "failed" : row.status === "paused" ? "paused" : row.status === "cancelled" ? "cancelled" : "queued", connections: 1, destination: row.destination }))))
       .catch(() => setToast("Could not load downloads from SQLite."));
   }, []);
 
+  useEffect(() => {
+    if (!("__TAURI_INTERNALS__" in window)) return;
+    const refresh = () => void invoke<StoredDownload[]>("get_downloads").then((rows) => setDownloads(rows.map((row) => ({ id: row.id, name: row.filename, url: row.url, size: row.totalBytes ?? 0, downloaded: row.downloadedBytes, speed: row.speedBps ?? 0, etaSeconds: row.etaSeconds ?? 0, status: row.status === "active" ? "active" : row.status === "completed" ? "completed" : row.status === "failed" ? "failed" : row.status === "paused" ? "paused" : row.status === "cancelled" ? "cancelled" : "queued", connections: 1, destination: row.destination }))));
+    const interval = window.setInterval(refresh, 1000);
+    return () => window.clearInterval(interval);
+  }, []);
+
   const filteredDownloads = useMemo(() => downloads.filter((item) => item.name.toLowerCase().includes(search.toLowerCase())), [downloads, search]);
+  const mapStoredDownload = (row: StoredDownload): DownloadItem => ({
+    id: row.id, name: row.filename, url: row.url, size: row.totalBytes ?? 0, downloaded: row.downloadedBytes,
+    speed: row.speedBps ?? 0, etaSeconds: row.etaSeconds ?? 0,
+    status: row.status === "active" ? "active" : row.status === "completed" ? "completed" : row.status === "failed" ? "failed" : row.status === "paused" ? "paused" : row.status === "cancelled" ? "cancelled" : "queued",
+    connections: 1, destination: row.destination,
+  });
+  const handleAction = async (id: string, action: "pause" | "resume" | "cancel" | "delete") => {
+    if (!("__TAURI_INTERNALS__" in window)) throw new Error("Open ZYNERO desktop to control downloads.");
+    const command = action === "pause" ? "pause_download" : action === "resume" ? "resume_download" : action === "cancel" ? "cancel_download" : "delete_download";
+    await invoke(command, { id });
+    if (action === "delete") setDownloads((current) => current.filter((item) => item.id !== id));
+    else if (action === "pause") setDownloads((current) => current.map((item) => item.id === id ? { ...item, status: "paused" } : item));
+    else if (action === "cancel") setDownloads((current) => current.map((item) => item.id === id ? { ...item, status: "cancelled" } : item));
+    else { const rows = await invoke<StoredDownload[]>("get_downloads"); setDownloads(rows.map(mapStoredDownload)); }
+  };
   const handleSubmit = async (url: string, destination: string) => {
     if (!("__TAURI_INTERNALS__" in window)) {
       throw new Error("Open ZYNERO desktop to start a real download.");
@@ -227,7 +246,7 @@ function App() {
         <header className="topbar"><div><div className="section-kicker">DOWNLOAD MANAGER <span className="live-indicator"><span /> LOCAL ENGINE</span></div><h1>{activeNav}</h1><p className="page-subtitle">Keep every transfer organized and moving.</p></div><button className="button button--primary" type="button" onClick={() => setModalOpen(true)}><Plus size={17} /> Add download</button></header>
         <section className="stats-grid"><StatCard label="Total downloads" value={`${downloads.length}`} detail="Across your workspace" icon={Download} accent="#74c9ff" /><StatCard label="Active speed" value="—" detail="Waiting for Rust engine" icon={Gauge} accent="#9ee7bd" /><StatCard label="Completed" value="0" detail="Nothing finished yet" icon={Check} accent="#c8b6ff" /><StatCard label="Scheduled" value="0" detail="No scheduled transfers" icon={Clock3} accent="#f4c46e" /></section>
         <div className="toolbar"><div className="search-field"><Search size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search downloads" aria-label="Search downloads" /></div><div className="toolbar-actions"><div className="theme-picker" aria-label="Theme"><Palette size={15} /><button className={theme === "midnight" ? "theme-swatch theme-swatch--active" : "theme-swatch"} type="button" onClick={() => setTheme("midnight")} aria-label="Midnight theme" /><button className={theme === "graphite" ? "theme-swatch theme-swatch--active theme-swatch--graphite" : "theme-swatch theme-swatch--graphite"} type="button" onClick={() => setTheme("graphite")} aria-label="Graphite theme" /><button className={theme === "dawn" ? "theme-swatch theme-swatch--active theme-swatch--dawn" : "theme-swatch theme-swatch--dawn"} type="button" onClick={() => setTheme("dawn")} aria-label="Dawn theme" /></div><button className="toolbar-button" type="button"><ListFilter size={16} /> Filter <ChevronDown size={14} /></button></div></div>
-        {filteredDownloads.length ? <section className="download-list" aria-label="Downloads">{filteredDownloads.map((item) => <DownloadCard key={item.id} item={item} />)}</section> : <EmptyDownloads onAdd={() => setModalOpen(true)} />}
+        {filteredDownloads.length ? <section className="download-list" aria-label="Downloads">{filteredDownloads.map((item) => <DownloadCard key={item.id} item={item} onAction={(action) => handleAction(item.id, action)} />)}</section> : <EmptyDownloads onAdd={() => setModalOpen(true)} />}
         <footer className="content-footer"><span><span className="footer-dot" /> Secure local workspace</span><span>Backend status: <strong>Ready for IPC</strong></span></footer>
       </section>
       {toast && <div className="toast"><Check size={16} />{toast}<button type="button" onClick={() => setToast("")} aria-label="Dismiss notification"><X size={14} /></button></div>}

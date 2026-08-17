@@ -1,4 +1,7 @@
-use crate::database::{DatabaseState, StoredDownload};
+use crate::{
+    database::{DatabaseState, StoredDownload},
+    download::DownloadManager,
+};
 use reqwest::header::{ACCEPT_RANGES, CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE, RANGE};
 use serde::{Deserialize, Serialize};
 use tauri::{command, State};
@@ -45,6 +48,7 @@ pub async fn inspect_url(url: String) -> Result<RemoteMetadata, String> {
 pub async fn add_download(
     request: AddDownloadRequest,
     database: State<'_, DatabaseState>,
+    manager: State<'_, DownloadManager>,
 ) -> Result<DownloadInfo, String> {
     let url = validate_url(&request.url)?;
     let destination = validate_destination(&request.destination)?;
@@ -61,7 +65,7 @@ pub async fn add_download(
         supports_range: metadata.supports_range,
     };
 
-    database.insert_download(&StoredDownload {
+    let stored = StoredDownload {
         id: download.id.clone(),
         url: download.url.clone(),
         filename: download.filename.clone(),
@@ -71,15 +75,63 @@ pub async fn add_download(
         downloaded_bytes: 0,
         content_type: download.content_type.clone(),
         supports_range: download.supports_range,
+        temp_path: None,
+        final_path: None,
+        error_message: None,
+        speed_bps: 0,
+        eta_seconds: 0,
         created_at: String::new(),
         updated_at: String::new(),
-    })?;
+    };
+    database.insert_download(&stored)?;
+    manager.start(stored)?;
     Ok(download)
 }
 
 #[command]
 pub fn get_downloads(database: State<'_, DatabaseState>) -> Result<Vec<StoredDownload>, String> {
     database.list_downloads()
+}
+
+#[command]
+pub fn pause_download(id: String, manager: State<'_, DownloadManager>) -> Result<(), String> {
+    manager.pause(&id)
+}
+
+#[command]
+pub fn resume_download(
+    id: String,
+    database: State<'_, DatabaseState>,
+    manager: State<'_, DownloadManager>,
+) -> Result<(), String> {
+    let download = database
+        .find_download(&id)?
+        .ok_or_else(|| "Download not found".to_string())?;
+    if !matches!(download.status.as_str(), "paused" | "queued" | "failed") {
+        return Err("Download cannot be resumed in its current state".to_string());
+    }
+    manager.start(download)
+}
+
+#[command]
+pub fn cancel_download(id: String, manager: State<'_, DownloadManager>) -> Result<(), String> {
+    manager.cancel(&id)
+}
+
+#[command]
+pub fn delete_download(
+    id: String,
+    database: State<'_, DatabaseState>,
+    manager: State<'_, DownloadManager>,
+) -> Result<(), String> {
+    let _ = manager.cancel(&id);
+    let download = database
+        .delete_download(&id)?
+        .ok_or_else(|| "Download not found".to_string())?;
+    if let Some(path) = download.temp_path.or(download.final_path) {
+        let _ = std::fs::remove_file(path);
+    }
+    Ok(())
 }
 
 async fn inspect_remote_url(url: Url) -> Result<RemoteMetadata, String> {

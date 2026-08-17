@@ -1,0 +1,5 @@
+ALTER TABLE downloads ADD COLUMN temp_path TEXT;
+ALTER TABLE downloads ADD COLUMN final_path TEXT;
+ALTER TABLE downloads ADD COLUMN error_message TEXT;
+ALTER TABLE downloads ADD COLUMN speed_bps INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE downloads ADD COLUMN eta_seconds INTEGER NOT NULL DEFAULT 0;

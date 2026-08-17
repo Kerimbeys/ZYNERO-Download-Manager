@@ -14,7 +14,11 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::add_download,
             commands::get_downloads,
-            commands::inspect_url
+            commands::inspect_url,
+            commands::pause_download,
+            commands::resume_download,
+            commands::cancel_download,
+            commands::delete_download
         ])
         .setup(|app| {
             let database = database::DatabaseState::open(
@@ -22,7 +26,10 @@ pub fn run() {
                     .app_data_dir()
                     .map_err(|error| format!("Could not resolve app data directory: {error}"))?,
             )?;
+            let manager = download::DownloadManager::new(database.clone())
+                .map_err(|error| Box::<dyn std::error::Error>::from(error))?;
             app.manage(database);
+            app.manage(manager);
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()

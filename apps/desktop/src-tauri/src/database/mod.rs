@@ -2,11 +2,15 @@
 
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
-use std::{fs, path::PathBuf, sync::Mutex};
+use std::{
+    fs,
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DatabaseState {
-    connection: Mutex<Connection>,
+    connection: Arc<Mutex<Connection>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -21,6 +25,11 @@ pub struct StoredDownload {
     pub downloaded_bytes: i64,
     pub content_type: Option<String>,
     pub supports_range: bool,
+    pub temp_path: Option<String>,
+    pub final_path: Option<String>,
+    pub error_message: Option<String>,
+    pub speed_bps: i64,
+    pub eta_seconds: i64,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -29,68 +38,104 @@ impl DatabaseState {
     pub fn open(app_data_dir: PathBuf) -> Result<Self, String> {
         fs::create_dir_all(&app_data_dir)
             .map_err(|error| format!("Could not create app data directory: {error}"))?;
-        let path = app_data_dir.join("zynero.sqlite3");
-        let connection = Connection::open(path)
+        let connection = Connection::open(app_data_dir.join("zynero.sqlite3"))
             .map_err(|error| format!("Could not open SQLite database: {error}"))?;
         connection
             .pragma_update(None, "foreign_keys", "ON")
             .map_err(|error| format!("Could not enable SQLite foreign keys: {error}"))?;
         connection
             .execute_batch(include_str!("../../migrations/0001_initial.sql"))
-            .map_err(|error| format!("Could not run database migrations: {error}"))?;
+            .map_err(|error| format!("Could not run initial migration: {error}"))?;
+        if let Err(error) =
+            connection.execute_batch(include_str!("../../migrations/0002_download_runtime.sql"))
+        {
+            let message = error.to_string();
+            if !message.contains("duplicate column name") {
+                return Err(format!("Could not run runtime migration: {message}"));
+            }
+        }
         Ok(Self {
-            connection: Mutex::new(connection),
+            connection: Arc::new(Mutex::new(connection)),
         })
     }
 
     pub fn insert_download(&self, download: &StoredDownload) -> Result<(), String> {
-        let connection = self
-            .connection
-            .lock()
-            .map_err(|_| "Database lock poisoned".to_string())?;
+        let connection = self.lock()?;
         connection.execute(
-            "INSERT INTO downloads (id, url, filename, destination, status, total_bytes, downloaded_bytes, content_type, supports_range, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
-            params![download.id, download.url, download.filename, download.destination, download.status, download.total_bytes, download.downloaded_bytes, download.content_type, download.supports_range as i64],
+            "INSERT INTO downloads (id, url, filename, destination, status, total_bytes, downloaded_bytes, content_type, supports_range, temp_path, final_path, error_message, speed_bps, eta_seconds, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+            params![download.id, download.url, download.filename, download.destination, download.status, download.total_bytes, download.downloaded_bytes, download.content_type, download.supports_range as i64, download.temp_path, download.final_path, download.error_message, download.speed_bps, download.eta_seconds],
         ).map_err(|error| format!("Could not insert download: {error}"))?;
         Ok(())
     }
 
     pub fn list_downloads(&self) -> Result<Vec<StoredDownload>, String> {
-        let connection = self
-            .connection
-            .lock()
-            .map_err(|_| "Database lock poisoned".to_string())?;
-        let mut statement = connection.prepare("SELECT id, url, filename, destination, status, total_bytes, downloaded_bytes, content_type, supports_range, created_at, updated_at FROM downloads ORDER BY created_at DESC").map_err(|error| format!("Could not prepare download query: {error}"))?;
+        let connection = self.lock()?;
+        let mut statement = connection.prepare("SELECT id, url, filename, destination, status, total_bytes, downloaded_bytes, content_type, supports_range, temp_path, final_path, error_message, speed_bps, eta_seconds, created_at, updated_at FROM downloads ORDER BY created_at DESC").map_err(|error| format!("Could not prepare download query: {error}"))?;
         let rows = statement
-            .query_map([], |row| {
-                Ok(StoredDownload {
-                    id: row.get(0)?,
-                    url: row.get(1)?,
-                    filename: row.get(2)?,
-                    destination: row.get(3)?,
-                    status: row.get(4)?,
-                    total_bytes: row.get(5)?,
-                    downloaded_bytes: row.get(6)?,
-                    content_type: row.get(7)?,
-                    supports_range: row.get::<_, i64>(8)? != 0,
-                    created_at: row.get(9)?,
-                    updated_at: row.get(10)?,
-                })
-            })
+            .query_map([], row_to_download)
             .map_err(|error| format!("Could not read downloads: {error}"))?;
         rows.map(|row| row.map_err(|error| format!("Could not decode download: {error}")))
             .collect()
     }
 
     pub fn find_download(&self, id: &str) -> Result<Option<StoredDownload>, String> {
-        let connection = self
-            .connection
-            .lock()
-            .map_err(|_| "Database lock poisoned".to_string())?;
-        connection.query_row("SELECT id, url, filename, destination, status, total_bytes, downloaded_bytes, content_type, supports_range, created_at, updated_at FROM downloads WHERE id = ?1", [id], |row| {
-            Ok(StoredDownload {
-                id: row.get(0)?, url: row.get(1)?, filename: row.get(2)?, destination: row.get(3)?, status: row.get(4)?, total_bytes: row.get(5)?, downloaded_bytes: row.get(6)?, content_type: row.get(7)?, supports_range: row.get::<_, i64>(8)? != 0, created_at: row.get(9)?, updated_at: row.get(10)?,
-            })
-        }).optional().map_err(|error| format!("Could not find download: {error}"))
+        let connection = self.lock()?;
+        connection.query_row("SELECT id, url, filename, destination, status, total_bytes, downloaded_bytes, content_type, supports_range, temp_path, final_path, error_message, speed_bps, eta_seconds, created_at, updated_at FROM downloads WHERE id = ?1", [id], row_to_download).optional().map_err(|error| format!("Could not find download: {error}"))
     }
+
+    pub fn update_runtime(
+        &self,
+        id: &str,
+        status: &str,
+        downloaded_bytes: i64,
+        speed_bps: i64,
+        eta_seconds: i64,
+        error_message: Option<&str>,
+    ) -> Result<(), String> {
+        let connection = self.lock()?;
+        connection.execute("UPDATE downloads SET status = ?2, downloaded_bytes = ?3, speed_bps = ?4, eta_seconds = ?5, error_message = ?6, updated_at = CURRENT_TIMESTAMP WHERE id = ?1", params![id, status, downloaded_bytes, speed_bps, eta_seconds, error_message]).map_err(|error| format!("Could not update download runtime: {error}"))?;
+        Ok(())
+    }
+
+    pub fn set_paths(&self, id: &str, temp_path: &str, final_path: &str) -> Result<(), String> {
+        let connection = self.lock()?;
+        connection.execute("UPDATE downloads SET temp_path = ?2, final_path = ?3, updated_at = CURRENT_TIMESTAMP WHERE id = ?1", params![id, temp_path, final_path]).map_err(|error| format!("Could not persist download paths: {error}"))?;
+        Ok(())
+    }
+
+    pub fn delete_download(&self, id: &str) -> Result<Option<StoredDownload>, String> {
+        let download = self.find_download(id)?;
+        let connection = self.lock()?;
+        connection
+            .execute("DELETE FROM downloads WHERE id = ?1", [id])
+            .map_err(|error| format!("Could not delete download: {error}"))?;
+        Ok(download)
+    }
+
+    fn lock(&self) -> Result<std::sync::MutexGuard<'_, Connection>, String> {
+        self.connection
+            .lock()
+            .map_err(|_| "Database lock poisoned".to_string())
+    }
+}
+
+fn row_to_download(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredDownload> {
+    Ok(StoredDownload {
+        id: row.get(0)?,
+        url: row.get(1)?,
+        filename: row.get(2)?,
+        destination: row.get(3)?,
+        status: row.get(4)?,
+        total_bytes: row.get(5)?,
+        downloaded_bytes: row.get(6)?,
+        content_type: row.get(7)?,
+        supports_range: row.get::<_, i64>(8)? != 0,
+        temp_path: row.get(9)?,
+        final_path: row.get(10)?,
+        error_message: row.get(11)?,
+        speed_bps: row.get(12)?,
+        eta_seconds: row.get(13)?,
+        created_at: row.get(14)?,
+        updated_at: row.get(15)?,
+    })
 }
