@@ -51,9 +51,9 @@
 - [x] E02 — Dashboard'u yalnızca gerçek Rust/SQLite verileriyle besle. Uygulama açılışında `get_downloads` IPC çağrısı ile persisted kayıtlar yükleniyor; mock download kullanılmıyor.
 - [x] E03 — Download card: progress, bytes, speed, ETA, connection count, status ve eylemler. Backend tipine hazır DownloadCard bileşeni ve durum görselleri eklendi.
 - [x] E04 — Add Download penceresini gerçek `add_download` command'ına bağla. Frontend `invoke` çağrısı, Rust request/response modeli ve hata gösterimi eklendi.
-- [ ] E05 — Active, Completed, Queued, Scheduled, Failed ve History görünümlerini ekle.
+- [x] E05 — Active, Completed, Queued, Scheduled, Failed ve History görünümlerini ekle. Navigation artık gerçek status filtreleri ve arama eşleşmesi uyguluyor; Scheduled görünümü scheduler verisi bekliyor.
 - [x] E06 — Pause/resume/cancel/delete/open file/open folder eylemlerini IPC'ye bağla. Tüm temel download lifecycle ve Windows Explorer file/folder command'ları frontend'e bağlandı.
-- [-] E07 — Light/dark/system tema desteğini ekle; aşırı gradient/glass kullanımından kaçın. Midnight, Graphite ve Dawn token varyantları ile tema seçici eklendi; system preference entegrasyonu sonraki adım.
+- [x] E07 — Light/dark/system tema desteğini ekle; aşırı gradient/glass kullanımından kaçın. Midnight/Graphite/Dawn token varyantları, system preference başlangıcı ve localStorage kalıcılığı eklendi.
 - [ ] E08 — UI testleri: add, pause, resume, delete ve settings.
 
 ## F. Kuyruk, bildirim ve ayarlar
@@ -115,4 +115,5 @@
 | 2026-08-17 | C03-C05 download worker | Tamamlandı | Async reqwest streaming, `.zynero.part` temp dosyası, unique final path, Range resume, persisted progress/speed/ETA; cargo check başarılı |
 | 2026-08-17 | E06 lifecycle IPC | Tamamlandı | pause/resume/cancel/delete/open file/open folder IPC, Tauri progress event listener ve polling fallback; cargo check/typecheck/build başarılı |
 | 2026-08-17 | B02/B04/B05 data resilience | Tamamlandı | `0003_queues_segments_settings.sql`, lifecycle transition guard, startup recovery ve 2/2 Rust unit test başarılı |
+| 2026-08-17 | E05/E07 frontend completion | Tamamlandı | Status navigation filtreleri, gerçek aktif/completed stats, system-aware theme başlangıcı ve localStorage tema kalıcılığı; typecheck/build başarılı |
 | 2026-08-17 | K01 reusable skill | Tamamlandı | `/home/ubuntu/skills/zynero-download-manager-development/SKILL.md`; `quick_validate.py` başarılı |

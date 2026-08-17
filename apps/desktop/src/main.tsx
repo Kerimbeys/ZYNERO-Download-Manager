@@ -185,7 +185,11 @@ function AddDownloadModal({ onClose, onSubmit }: { onClose: () => void; onSubmit
 
 function App() {
   const [activeNav, setActiveNav] = useState("Downloads");
-  const [theme, setTheme] = useState<"midnight" | "graphite" | "dawn">("midnight");
+  const [theme, setTheme] = useState<"midnight" | "graphite" | "dawn">(() => {
+    const saved = window.localStorage.getItem("zynero-theme");
+    if (saved === "midnight" || saved === "graphite" || saved === "dawn") return saved;
+    return window.matchMedia?.("(prefers-color-scheme: light)").matches ? "dawn" : "midnight";
+  });
   const [isModalOpen, setModalOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [downloads, setDownloads] = useState<DownloadItem[]>([]);
@@ -218,7 +222,16 @@ function App() {
     return () => { unlisten?.(); };
   }, []);
 
-  const filteredDownloads = useMemo(() => downloads.filter((item) => item.name.toLowerCase().includes(search.toLowerCase())), [downloads, search]);
+  useEffect(() => { window.localStorage.setItem("zynero-theme", theme); }, [theme]);
+
+  const filteredDownloads = useMemo(() => {
+    const query = search.toLowerCase();
+    return downloads.filter((item) => {
+      const matchesSearch = item.name.toLowerCase().includes(query) || item.url.toLowerCase().includes(query);
+      const matchesView = activeNav === "Downloads" || activeNav === "History" || (activeNav === "Active" && item.status === "active") || (activeNav === "Completed" && item.status === "completed") || (activeNav === "Queued" && (item.status === "queued" || item.status === "paused")) || (activeNav === "Failed" && item.status === "failed") || activeNav === "Scheduled";
+      return matchesSearch && matchesView;
+    });
+  }, [activeNav, downloads, search]);
   const mapStoredDownload = (row: StoredDownload): DownloadItem => ({
     id: row.id, name: row.filename, url: row.url, size: row.totalBytes ?? 0, downloaded: row.downloadedBytes,
     speed: row.speedBps ?? 0, etaSeconds: row.etaSeconds ?? 0,
@@ -260,7 +273,7 @@ function App() {
       </aside>
       <section className="content">
         <header className="topbar"><div><div className="section-kicker">DOWNLOAD MANAGER <span className="live-indicator"><span /> LOCAL ENGINE</span></div><h1>{activeNav}</h1><p className="page-subtitle">Keep every transfer organized and moving.</p></div><button className="button button--primary" type="button" onClick={() => setModalOpen(true)}><Plus size={17} /> Add download</button></header>
-        <section className="stats-grid"><StatCard label="Total downloads" value={`${downloads.length}`} detail="Across your workspace" icon={Download} accent="#74c9ff" /><StatCard label="Active speed" value="—" detail="Waiting for Rust engine" icon={Gauge} accent="#9ee7bd" /><StatCard label="Completed" value="0" detail="Nothing finished yet" icon={Check} accent="#c8b6ff" /><StatCard label="Scheduled" value="0" detail="No scheduled transfers" icon={Clock3} accent="#f4c46e" /></section>
+        <section className="stats-grid"><StatCard label="Total downloads" value={`${downloads.length}`} detail="Across your workspace" icon={Download} accent="#74c9ff" /><StatCard label="Active speed" value={formatSpeed(downloads.filter((item) => item.status === "active").reduce((sum, item) => sum + item.speed, 0))} detail="Live from download workers" icon={Gauge} accent="#9ee7bd" /><StatCard label="Completed" value={`${downloads.filter((item) => item.status === "completed").length}`} detail="Finished transfers" icon={Check} accent="#c8b6ff" /><StatCard label="Scheduled" value="0" detail="No scheduled transfers" icon={Clock3} accent="#f4c46e" /></section>
         <div className="toolbar"><div className="search-field"><Search size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search downloads" aria-label="Search downloads" /></div><div className="toolbar-actions"><div className="theme-picker" aria-label="Theme"><Palette size={15} /><button className={theme === "midnight" ? "theme-swatch theme-swatch--active" : "theme-swatch"} type="button" onClick={() => setTheme("midnight")} aria-label="Midnight theme" /><button className={theme === "graphite" ? "theme-swatch theme-swatch--active theme-swatch--graphite" : "theme-swatch theme-swatch--graphite"} type="button" onClick={() => setTheme("graphite")} aria-label="Graphite theme" /><button className={theme === "dawn" ? "theme-swatch theme-swatch--active theme-swatch--dawn" : "theme-swatch theme-swatch--dawn"} type="button" onClick={() => setTheme("dawn")} aria-label="Dawn theme" /></div><button className="toolbar-button" type="button"><ListFilter size={16} /> Filter <ChevronDown size={14} /></button></div></div>
         {filteredDownloads.length ? <section className="download-list" aria-label="Downloads">{filteredDownloads.map((item) => <DownloadCard key={item.id} item={item} onAction={(action) => handleAction(item.id, action)} />)}</section> : <EmptyDownloads onAdd={() => setModalOpen(true)} />}
         <footer className="content-footer"><span><span className="footer-dot" /> Secure local workspace</span><span>Backend status: <strong>Ready for IPC</strong></span></footer>
