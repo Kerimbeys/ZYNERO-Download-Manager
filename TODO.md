@@ -24,7 +24,7 @@
 
 ## C. İlk gerçek indirme dilimi — en yüksek öncelik
 
-- [ ] C01 — URL doğrulama, protocol kontrolü ve güvenli filename çıkarımı.
+- [x] C01 — URL doğrulama, protocol kontrolü ve güvenli filename çıkarımı. `add_download` command HTTP/HTTPS, host, embedded credential ve güvenli filename kontrollerini yapıyor.
 - [ ] C02 — HEAD/ilk GET metadata tespiti: content length, content type ve Range capability.
 - [ ] C03 — Tek bağlantılı streaming HTTP/HTTPS download worker'ını yaz; büyük dosyayı RAM'e alma.
 - [ ] C04 — Güvenli geçici dosya ve hedef path oluşturma; traversal ve overwrite kontrollerini ekle.
@@ -50,10 +50,10 @@
 - [x] E01 — Windows 11 esintili responsive shell ve sidebar oluştur. Responsive sidebar, workspace navigasyonu, storage kartı ve temel uygulama shell'i eklendi.
 - [ ] E02 — Dashboard'u yalnızca gerçek Rust/SQLite verileriyle besle.
 - [x] E03 — Download card: progress, bytes, speed, ETA, connection count, status ve eylemler. Backend tipine hazır DownloadCard bileşeni ve durum görselleri eklendi.
-- [ ] E04 — Add Download penceresini gerçek `add_download` command'ına bağla.
+- [x] E04 — Add Download penceresini gerçek `add_download` command'ına bağla. Frontend `invoke` çağrısı, Rust request/response modeli ve hata gösterimi eklendi.
 - [ ] E05 — Active, Completed, Queued, Scheduled, Failed ve History görünümlerini ekle.
 - [ ] E06 — Pause/resume/cancel/delete/open file/open folder eylemlerini IPC'ye bağla.
-- [ ] E07 — Light/dark/system tema desteğini ekle; aşırı gradient/glass kullanımından kaçın.
+- [-] E07 — Light/dark/system tema desteğini ekle; aşırı gradient/glass kullanımından kaçın. Midnight, Graphite ve Dawn token varyantları ile tema seçici eklendi; system preference entegrasyonu sonraki adım.
 - [ ] E08 — UI testleri: add, pause, resume, delete ve settings.
 
 ## F. Kuyruk, bildirim ve ayarlar
@@ -105,3 +105,5 @@
 | 2026-08-17 | J01 GitHub repository | Tamamlandı | `main` branch pushlandı; GitHub üzerinde 2 commit ve README doğrulandı |
 | 2026-08-17 | A02/A03 Tauri katmanı | Tamamlandı | Rust 1.97.1, Tauri CLI 2.11.4, MSVC ve WebView2 kuruldu; `cargo check`, frontend build ve Windows EXE/MSI/NSIS üretimi başarılı |
 | 2026-08-17 | E01/E03 frontend bileşenleri | Tamamlandı | Responsive Dashboard shell, sidebar, stats, search/filter toolbar, empty state, DownloadCard ve Add Download modalı; typecheck/build başarılı |
+| 2026-08-17 | C01/E04 IPC entegrasyonu | Tamamlandı | Rust `add_download` command, güvenli URL/filename validation, frontend `invoke` bağlantısı; `cargo check`, typecheck ve build başarılı |
+| 2026-08-17 | E07 tema özelleştirmesi | Devam ediyor | Midnight, Graphite ve Dawn token varyantları ile seçici eklendi; system theme ve kalıcı ayar bekliyor |

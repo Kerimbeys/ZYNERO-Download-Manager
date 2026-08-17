@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import {
   Archive,
   ArrowDownToLine,
@@ -12,6 +13,7 @@ import {
   History,
   ListFilter,
   MoreHorizontal,
+  Palette,
   Pause,
   Play,
   Plus,
@@ -102,7 +104,7 @@ function EmptyDownloads({ onAdd }: { onAdd: () => void }) {
 }
 
 function DownloadCard({ item }: { item: DownloadItem }) {
-  const progress = Math.round((item.downloaded / item.size) * 100);
+  const progress = item.size > 0 ? Math.round((item.downloaded / item.size) * 100) : 0;
   const isPaused = item.status === "queued";
   return (
     <article className="download-card">
@@ -125,17 +127,21 @@ function DownloadCard({ item }: { item: DownloadItem }) {
   );
 }
 
-function AddDownloadModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (url: string, destination: string) => void }) {
+function AddDownloadModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (url: string, destination: string) => Promise<void> }) {
   const [url, setUrl] = useState("");
   const [destination, setDestination] = useState("Downloads");
   const [error, setError] = useState("");
-  const submit = () => {
+  const [isSubmitting, setSubmitting] = useState(false);
+  const submit = async () => {
     try {
       const parsed = new URL(url);
       if (!/^https?:$/.test(parsed.protocol)) throw new Error();
-      onSubmit(url.trim(), destination);
-    } catch {
-      setError("Enter a valid HTTP or HTTPS URL.");
+      setSubmitting(true);
+      await onSubmit(url.trim(), destination);
+    } catch (submissionError) {
+      setError(submissionError instanceof Error ? submissionError.message : "The download could not be queued.");
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -144,12 +150,12 @@ function AddDownloadModal({ onClose, onSubmit }: { onClose: () => void; onSubmit
       <section className="modal" role="dialog" aria-modal="true" aria-labelledby="add-download-title">
         <div className="modal__header"><div><div className="section-kicker">NEW TRANSFER</div><h2 id="add-download-title">Add download</h2></div><button className="icon-button" type="button" onClick={onClose} aria-label="Close dialog"><X size={19} /></button></div>
         <label className="field-label" htmlFor="download-url">Download URL</label>
-        <div className={`url-field ${error ? "url-field--error" : ""}`}><ExternalLink size={17} /><input id="download-url" autoFocus value={url} onChange={(event) => { setUrl(event.target.value); setError(""); }} placeholder="https://example.com/file.zip" onKeyDown={(event) => event.key === "Enter" && submit()} /></div>
+        <div className={`url-field ${error ? "url-field--error" : ""}`}><ExternalLink size={17} /><input id="download-url" autoFocus value={url} onChange={(event) => { setUrl(event.target.value); setError(""); }} placeholder="https://example.com/file.zip" onKeyDown={(event) => event.key === "Enter" && void submit()} /></div>
         {error && <p className="field-error">{error}</p>}
         <label className="field-label" htmlFor="destination">Save to</label>
         <div className="select-field"><FolderOpen size={17} /><select id="destination" value={destination} onChange={(event) => setDestination(event.target.value)}><option>Downloads</option><option>Desktop</option><option>Documents</option></select><ChevronDown size={16} /></div>
         <div className="modal__note"><ShieldCheck size={16} /><span>URL validation and file safety checks will run in the Rust engine.</span></div>
-        <div className="modal__actions"><button className="button button--ghost" type="button" onClick={onClose}>Cancel</button><button className="button button--primary" type="button" onClick={submit}><ArrowDownToLine size={16} /> Start download</button></div>
+        <div className="modal__actions"><button className="button button--ghost" type="button" onClick={onClose} disabled={isSubmitting}>Cancel</button><button className="button button--primary" type="button" onClick={() => void submit()} disabled={isSubmitting}><ArrowDownToLine size={16} /> {isSubmitting ? "Validating…" : "Start download"}</button></div>
       </section>
     </div>
   );
@@ -157,22 +163,28 @@ function AddDownloadModal({ onClose, onSubmit }: { onClose: () => void; onSubmit
 
 function App() {
   const [activeNav, setActiveNav] = useState("Downloads");
+  const [theme, setTheme] = useState<"midnight" | "graphite" | "dawn">("midnight");
   const [isModalOpen, setModalOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [downloads, setDownloads] = useState<DownloadItem[]>([]);
   const [toast, setToast] = useState("");
 
   const filteredDownloads = useMemo(() => downloads.filter((item) => item.name.toLowerCase().includes(search.toLowerCase())), [downloads, search]);
-  const handleSubmit = (url: string, destination: string) => {
-    const name = decodeURIComponent(url.split("/").pop() || "download");
-    setDownloads((current) => [{ id: crypto.randomUUID(), name, url, size: 0, downloaded: 0, speed: 0, etaSeconds: 0, status: "queued", connections: 1, destination }, ...current]);
+  const handleSubmit = async (url: string, destination: string) => {
+    if (!("__TAURI_INTERNALS__" in window)) {
+      throw new Error("Open ZYNERO desktop to start a real download.");
+    }
+    const result = await invoke<{ id: string; url: string; filename: string; destination: string; status: DownloadStatus }>("add_download", {
+      request: { url, destination },
+    });
+    setDownloads((current) => [{ id: result.id, name: result.filename, url: result.url, size: 0, downloaded: 0, speed: 0, etaSeconds: 0, status: result.status, connections: 1, destination: result.destination }, ...current]);
     setModalOpen(false);
-    setToast("Download queued. Rust IPC connection is next.");
+    setToast("Download queued by the Rust engine.");
     window.setTimeout(() => setToast(""), 4200);
   };
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell theme-${theme}`}>
       <aside className="sidebar">
         <div className="brand-lockup"><div className="brand-mark"><Sparkles size={17} /></div><div><div className="brand">ZYNERO</div><div className="tagline">Download. Faster. Smarter.</div></div></div>
         <div className="workspace-label">WORKSPACE</div>
@@ -184,7 +196,7 @@ function App() {
       <section className="content">
         <header className="topbar"><div><div className="section-kicker">DOWNLOAD MANAGER <span className="live-indicator"><span /> LOCAL ENGINE</span></div><h1>{activeNav}</h1><p className="page-subtitle">Keep every transfer organized and moving.</p></div><button className="button button--primary" type="button" onClick={() => setModalOpen(true)}><Plus size={17} /> Add download</button></header>
         <section className="stats-grid"><StatCard label="Total downloads" value={`${downloads.length}`} detail="Across your workspace" icon={Download} accent="#74c9ff" /><StatCard label="Active speed" value="—" detail="Waiting for Rust engine" icon={Gauge} accent="#9ee7bd" /><StatCard label="Completed" value="0" detail="Nothing finished yet" icon={Check} accent="#c8b6ff" /><StatCard label="Scheduled" value="0" detail="No scheduled transfers" icon={Clock3} accent="#f4c46e" /></section>
-        <div className="toolbar"><div className="search-field"><Search size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search downloads" aria-label="Search downloads" /></div><button className="toolbar-button" type="button"><ListFilter size={16} /> Filter <ChevronDown size={14} /></button></div>
+        <div className="toolbar"><div className="search-field"><Search size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search downloads" aria-label="Search downloads" /></div><div className="toolbar-actions"><div className="theme-picker" aria-label="Theme"><Palette size={15} /><button className={theme === "midnight" ? "theme-swatch theme-swatch--active" : "theme-swatch"} type="button" onClick={() => setTheme("midnight")} aria-label="Midnight theme" /><button className={theme === "graphite" ? "theme-swatch theme-swatch--active theme-swatch--graphite" : "theme-swatch theme-swatch--graphite"} type="button" onClick={() => setTheme("graphite")} aria-label="Graphite theme" /><button className={theme === "dawn" ? "theme-swatch theme-swatch--active theme-swatch--dawn" : "theme-swatch theme-swatch--dawn"} type="button" onClick={() => setTheme("dawn")} aria-label="Dawn theme" /></div><button className="toolbar-button" type="button"><ListFilter size={16} /> Filter <ChevronDown size={14} /></button></div></div>
         {filteredDownloads.length ? <section className="download-list" aria-label="Downloads">{filteredDownloads.map((item) => <DownloadCard key={item.id} item={item} />)}</section> : <EmptyDownloads onAdd={() => setModalOpen(true)} />}
         <footer className="content-footer"><span><span className="footer-dot" /> Secure local workspace</span><span>Backend status: <strong>Ready for IPC</strong></span></footer>
       </section>
