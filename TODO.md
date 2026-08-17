@@ -7,12 +7,12 @@
 ## A. Başlangıç ve mimari
 
 - [x] A01 — Repository çalışma alanını oluştur; `apps/desktop`, `apps/extension`, `packages/shared`, `packages/i18n`, `docs`, `scripts` ve `tests` dizinlerini ekle. Temel pnpm workspace ve React/Vite uygulama iskeleti oluşturuldu.
-- [-] A02 — Tauri 2.x + React + TypeScript + Vite masaüstü iskeletini kur ve Windows hedefini doğrula. React/Vite kısmı hazır ve doğrulandı; Windows ortamında Rust/cargo/rustup eksik olduğu için Tauri katmanı bekliyor.
-- [ ] A03 — Rust modül sınırlarını oluştur: `commands`, `download`, `database`, `scheduler`, `browser`, `security`, `utils`.
+- [x] A02 — Tauri 2.x + React + TypeScript + Vite masaüstü iskeletini kur ve Windows hedefini doğrula. Rust 1.97.1, Tauri CLI 2.11.4, MSVC Build Tools ve WebView2 hazır; Tauri dev/release derleme doğrulandı.
+- [x] A03 — Rust modül sınırlarını oluştur: `commands`, `download`, `database`, `scheduler`, `browser`, `security`, `utils`. Modül iskeletleri ve `lib.rs` bağlantıları eklendi.
 - [ ] A04 — Ortak domain tiplerini tanımla: `DownloadStatus`, `Download`, `Segment`, progress payload ve IPC hata modeli.
 - [ ] A05 — Güvenli Tauri capability/permission politikasını ve minimal IPC yüzeyini tanımla.
 - [ ] A06 — `README.md`, `ARCHITECTURE.md`, `SECURITY.md`, `CONTRIBUTING.md` ve `CHANGELOG.md` başlangıç belgelerini yaz.
-- [ ] A07 — Format, lint, typecheck, Rust check/test ve build komutlarını çalışır hâle getir.
+- [-] A07 — Format, lint, typecheck, Rust check/test ve build komutlarını çalışır hâle getir. Frontend typecheck/build ve `cargo check` çalışıyor; format/lint/test komutları sonraki adım.
 
 ## B. Kalıcı veri katmanı
 
@@ -103,3 +103,4 @@
 | 2026-08-17 | TODO çalışma planı | Tamamlandı | Bu dosya oluşturuldu |
 | 2026-08-17 | A01 repository iskeleti | Tamamlandı | `pnpm --filter @zynero/desktop typecheck` ve `build` başarılı; Rust/cargo/rustup eksikliği A02'yi engelliyor |
 | 2026-08-17 | J01 GitHub repository | Tamamlandı | `main` branch pushlandı; GitHub üzerinde 2 commit ve README doğrulandı |
+| 2026-08-17 | A02/A03 Tauri katmanı | Tamamlandı | Rust 1.97.1, Tauri CLI 2.11.4, MSVC ve WebView2 kuruldu; `cargo check`, frontend build ve Windows EXE/MSI/NSIS üretimi başarılı |
