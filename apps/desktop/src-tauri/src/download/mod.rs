@@ -304,3 +304,82 @@ fn _is_safe_path(path: &Path) -> bool {
         .components()
         .any(|component| matches!(component, std::path::Component::ParentDir))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::database::DatabaseState;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+
+    fn sample(url: String) -> StoredDownload {
+        StoredDownload {
+            id: "worker-test".into(),
+            url,
+            filename: "sample.bin".into(),
+            destination: "Downloads".into(),
+            status: "queued".into(),
+            total_bytes: None,
+            downloaded_bytes: 0,
+            content_type: None,
+            supports_range: false,
+            temp_path: None,
+            final_path: None,
+            error_message: None,
+            speed_bps: 0,
+            eta_seconds: 0,
+            created_at: String::new(),
+            updated_at: String::new(),
+        }
+    }
+
+    #[tokio::test]
+    async fn request_retries_transient_http_errors() {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind local server");
+        let address = listener.local_addr().expect("local address");
+        tokio::spawn(async move {
+            for attempt in 0..3 {
+                let (mut socket, _) = listener.accept().await.expect("accept request");
+                let mut buffer = [0u8; 512];
+                let _ = socket.read(&mut buffer).await;
+                let response = if attempt < 2 {
+                    "HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\n\r\n"
+                } else {
+                    "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n"
+                };
+                socket
+                    .write_all(response.as_bytes())
+                    .await
+                    .expect("write response");
+            }
+        });
+        let path =
+            std::env::temp_dir().join(format!("zynero-worker-test-{}", uuid::Uuid::new_v4()));
+        let database = DatabaseState::open(path.clone()).expect("database opens");
+        let manager = DownloadManager::new(database).expect("manager creates");
+        let response = manager
+            .request(&sample(format!("http://{address}/file")), 0)
+            .await
+            .expect("request eventually succeeds");
+        assert_eq!(response.status(), reqwest::StatusCode::OK);
+        let _ = std::fs::remove_dir_all(path);
+    }
+
+    #[test]
+    fn generated_temp_path_is_hidden_sibling_of_final_file() {
+        let path = std::env::temp_dir().join(format!("zynero-path-test-{}", uuid::Uuid::new_v4()));
+        let database = DatabaseState::open(path.clone()).expect("database opens");
+        let download = sample("https://example.com/file".into());
+        let (temp, final_path) = resolve_paths(&download).expect("paths resolve");
+        assert!(temp
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or_default()
+            .ends_with(".zynero.part"));
+        assert_eq!(temp.parent(), final_path.parent());
+        drop(database);
+        let _ = std::fs::remove_dir_all(path);
+    }
+}

@@ -33,7 +33,7 @@
 - [x] C07 — Gerçek pause: request cancellation, offset persist ve SQLite state update. Worker control flag ile stream'i durduruyor; temp file boyutu ve paused state kalıcı.
 - [x] C08 — Gerçek resume: persisted offset'ten devam et; destek yoksa açık hata/fallback davranışı uygula. Range destekliyse offset header kullanılıyor; 206 dönmezse sıfırdan güvenli fallback yapılıyor.
 - [x] C09 — Retry/backoff, timeout, HTTP hata sınıfları ve insan okunabilir hata mesajlarını ekle. 3 denemeli exponential backoff, connect/request timeout ve transient HTTP status handling eklendi.
-- [-] C10 — Local HTTP test server ile HTTP, pause/resume, restart recovery ve failure integration testlerini yaz. Database transition/recovery unit testleri eklendi ve 2/2 geçti; local HTTP integration matrix sonraki adım.
+- [-] C10 — Local HTTP test server ile HTTP, pause/resume, restart recovery ve failure integration testlerini yaz. Database transition/recovery unit testleri 2/2 geçti; local HTTP retry ve temp path testleri eklendi, ancak uzak terminal köprüsü zaman aşımı nedeniyle son binary sonucu ayrıca doğrulanacak.
 - [ ] C11 — İlk dikey milestone'u uçtan uca doğrula ve `feat(core): add resumable downloads` commit'ini oluştur.
 
 ## D. Çoklu bağlantı ve performans
@@ -116,4 +116,5 @@
 | 2026-08-17 | E06 lifecycle IPC | Tamamlandı | pause/resume/cancel/delete/open file/open folder IPC, Tauri progress event listener ve polling fallback; cargo check/typecheck/build başarılı |
 | 2026-08-17 | B02/B04/B05 data resilience | Tamamlandı | `0003_queues_segments_settings.sql`, lifecycle transition guard, startup recovery ve 2/2 Rust unit test başarılı |
 | 2026-08-17 | E05/E07 frontend completion | Tamamlandı | Status navigation filtreleri, gerçek aktif/completed stats, system-aware theme başlangıcı ve localStorage tema kalıcılığı; typecheck/build başarılı |
+| 2026-08-17 | C10 test hazırlığı | Devam ediyor | Local TCP HTTP retry ve temp path testleri eklendi; Rust test binary derlendi, uzak terminal köprüsü çıktıyı zaman aşımıyla kesti |
 | 2026-08-17 | K01 reusable skill | Tamamlandı | `/home/ubuntu/skills/zynero-download-manager-development/SKILL.md`; `quick_validate.py` başarılı |
