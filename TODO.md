@@ -61,7 +61,7 @@
 - [-] F01 — Queue CRUD, priority, automatic start ve max concurrent downloads. Queue/settings SQLite CRUD ve Tauri commands eklendi; scheduler orchestration ve frontend ayar ekranı sonraki adım.
 - [-] F02 — Scheduler: başlangıç/duruş zamanı ve WAITING/QUEUED geçişleri. Queue schedule migration, RFC3339 window evaluator ve `evaluate_queue_schedule` IPC eklendi; otomatik queue worker geçişleri sonraki adım.
 - [ ] F03 — Windows completion/failure/queue notification'larını optional yap.
-- [ ] F04 — General, Downloads, Connections, Notifications, Appearance, Privacy ve Advanced ayarlarını bağla.
+- [-] F04 — General, Downloads, Connections, Notifications, Appearance, Privacy ve Advanced ayarlarını bağla. Downloads max concurrent/auto-start ayarları, Appearance tema seçenekleri ve `set_setting` IPC paneli eklendi; diğer ayar bölümleri sonraki adım.
 - [ ] F05 — Dosya kategorileri ve extension mapping'i ekle.
 
 ## G. Güvenlik ve ürünleştirme
@@ -119,4 +119,5 @@
 | 2026-08-17 | C10 test hazırlığı | Devam ediyor | Local TCP HTTP retry ve temp path testleri eklendi; Rust test binary derlendi, uzak terminal köprüsü çıktıyı zaman aşımıyla kesti |
 | 2026-08-17 | F01 queue/settings backend | Devam ediyor | QueueRecord/settings repository CRUD, validation ve `get_queues/save_queue/get_setting/set_setting` Tauri commands eklendi; cargo check/typecheck/build başarılı |
 | 2026-08-17 | F02 scheduler foundation | Devam ediyor | `0004_queue_schedule.sql`, RFC3339 schedule window evaluator ve `evaluate_queue_schedule` IPC eklendi; cargo check/typecheck/build başarılı; otomatik queue runner bekliyor |
+| 2026-08-17 | F04 settings foundation | Devam ediyor | Settings paneli, max concurrent/auto-start `set_setting` IPC ve tema seçenekleri eklendi; typecheck/build başarılı |
 | 2026-08-17 | K01 reusable skill | Tamamlandı | `/home/ubuntu/skills/zynero-download-manager-development/SKILL.md`; `quick_validate.py` başarılı |

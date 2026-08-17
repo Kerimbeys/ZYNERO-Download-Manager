@@ -183,6 +183,44 @@ function AddDownloadModal({ onClose, onSubmit }: { onClose: () => void; onSubmit
   );
 }
 
+function SettingsPanel({ theme, onTheme, onClose, onToast }: { theme: "midnight" | "graphite" | "dawn"; onTheme: (theme: "midnight" | "graphite" | "dawn") => void; onClose: () => void; onToast: (message: string) => void }) {
+  const [maxConcurrent, setMaxConcurrent] = useState("3");
+  const [autoStart, setAutoStart] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    const parsed = Number(maxConcurrent);
+    if (!Number.isInteger(parsed) || parsed < 1 || parsed > 32) {
+      onToast("Concurrent downloads must be between 1 and 32.");
+      return;
+    }
+    setSaving(true);
+    try {
+      if ("__TAURI_INTERNALS__" in window) {
+        await invoke("set_setting", { key: "max_concurrent_downloads", value: String(parsed) });
+        await invoke("set_setting", { key: "auto_start_downloads", value: String(autoStart) });
+      }
+      onToast("Settings saved.");
+      onClose();
+    } catch (error) {
+      onToast(error instanceof Error ? error.message : "Settings could not be saved.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <section className="modal settings-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+        <div className="modal__header"><div><div className="section-kicker">WORKSPACE CONFIGURATION</div><h2 id="settings-title">Settings</h2></div><button className="icon-button" type="button" onClick={onClose} aria-label="Close settings"><X size={19} /></button></div>
+        <div className="settings-section"><div className="settings-section__heading"><Settings size={16} /><div><strong>Downloads</strong><small>Control the local transfer engine.</small></div></div><label className="field-label" htmlFor="max-concurrent">Maximum concurrent downloads</label><input className="settings-input" id="max-concurrent" type="number" min="1" max="32" value={maxConcurrent} onChange={(event) => setMaxConcurrent(event.target.value)} /><label className="settings-toggle"><input type="checkbox" checked={autoStart} onChange={(event) => setAutoStart(event.target.checked)} /><span>Start queued downloads automatically</span></label></div>
+        <div className="settings-section"><div className="settings-section__heading"><Palette size={16} /><div><strong>Appearance</strong><small>Choose a persistent workspace theme.</small></div></div><div className="theme-options">{(["midnight", "graphite", "dawn"] as const).map((option) => <button key={option} type="button" className={`theme-option ${theme === option ? "theme-option--active" : ""}`} onClick={() => onTheme(option)}><span className={`theme-option__swatch theme-option__swatch--${option}`} /><span>{option[0].toUpperCase() + option.slice(1)}</span></button>)}</div></div>
+        <div className="modal__actions"><button className="button button--ghost" type="button" onClick={onClose} disabled={saving}>Cancel</button><button className="button button--primary" type="button" onClick={() => void save()} disabled={saving}>{saving ? "Saving…" : "Save settings"}</button></div>
+      </section>
+    </div>
+  );
+}
+
 function App() {
   const [activeNav, setActiveNav] = useState("Downloads");
   const [theme, setTheme] = useState<"midnight" | "graphite" | "dawn">(() => {
@@ -194,6 +232,7 @@ function App() {
   const [search, setSearch] = useState("");
   const [downloads, setDownloads] = useState<DownloadItem[]>([]);
   const [toast, setToast] = useState("");
+  const [isSettingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(() => {
     if (!("__TAURI_INTERNALS__" in window)) return;
@@ -269,7 +308,7 @@ function App() {
         <nav className="main-nav" aria-label="Primary navigation">
           {navItems.map(({ label, icon: Icon }) => <button key={label} className={`nav-item ${activeNav === label ? "nav-item--active" : ""}`} type="button" onClick={() => setActiveNav(label)}><Icon size={17} /><span>{label}</span>{label === "Downloads" && <span className="nav-count">{downloads.length}</span>}</button>)}
         </nav>
-        <div className="sidebar-bottom"><div className="storage-card"><div className="storage-card__title"><span>Storage</span><span>Ready</span></div><div className="storage-bar"><span /></div><small>Local files only</small></div><button className="nav-item" type="button"><Settings size={17} /><span>Settings</span></button><div className="version">ZYNERO v0.1.0 · MVP</div></div>
+        <div className="sidebar-bottom"><div className="storage-card"><div className="storage-card__title"><span>Storage</span><span>Ready</span></div><div className="storage-bar"><span /></div><small>Local files only</small></div><button className="nav-item" type="button" onClick={() => setSettingsOpen(true)}><Settings size={17} /><span>Settings</span></button><div className="version">ZYNERO v0.1.0 · MVP</div></div>
       </aside>
       <section className="content">
         <header className="topbar"><div><div className="section-kicker">DOWNLOAD MANAGER <span className="live-indicator"><span /> LOCAL ENGINE</span></div><h1>{activeNav}</h1><p className="page-subtitle">Keep every transfer organized and moving.</p></div><button className="button button--primary" type="button" onClick={() => setModalOpen(true)}><Plus size={17} /> Add download</button></header>
@@ -280,6 +319,7 @@ function App() {
       </section>
       {toast && <div className="toast"><Check size={16} />{toast}<button type="button" onClick={() => setToast("")} aria-label="Dismiss notification"><X size={14} /></button></div>}
       {isModalOpen && <AddDownloadModal onClose={() => setModalOpen(false)} onSubmit={handleSubmit} />}
+      {isSettingsOpen && <SettingsPanel theme={theme} onTheme={setTheme} onClose={() => setSettingsOpen(false)} onToast={(message) => { setToast(message); window.setTimeout(() => setToast(""), 4200); }} />}
     </main>
   );
 }
