@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+apps/desktop/src-tauri/target/
+
+# Local environment
+.env
+.env.*
+!.env.example
+
+# IDE and OS
+.vscode/
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Logs and local data
+*.log
+*.sqlite
+*.sqlite3
+*.db
+
+# Tauri generated artifacts
+apps/desktop/src-tauri/gen/
+apps/desktop/src-tauri/.tauri/
