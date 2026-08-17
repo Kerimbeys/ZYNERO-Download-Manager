@@ -1,45 +1,197 @@
-import React from "react";
-import { createRoot } from "react-dom/client";
+import { useMemo, useState } from "react";
+import {
+  Archive,
+  ArrowDownToLine,
+  Check,
+  ChevronDown,
+  Clock3,
+  Download,
+  ExternalLink,
+  FolderOpen,
+  Gauge,
+  History,
+  ListFilter,
+  MoreHorizontal,
+  Pause,
+  Play,
+  Plus,
+  RotateCcw,
+  Search,
+  Settings,
+  ShieldCheck,
+  Sparkles,
+  Trash2,
+  X,
+  Zap,
+} from "lucide-react";
 import "./styles.css";
 
+type DownloadStatus = "active" | "queued" | "completed" | "failed";
+
+type DownloadItem = {
+  id: string;
+  name: string;
+  url: string;
+  size: number;
+  downloaded: number;
+  speed: number;
+  etaSeconds: number;
+  status: DownloadStatus;
+  connections: number;
+  destination: string;
+};
+
+type NavItem = {
+  label: string;
+  icon: typeof Download;
+  count?: number;
+};
+
+const navItems: NavItem[] = [
+  { label: "Downloads", icon: Download },
+  { label: "Active", icon: Zap },
+  { label: "Completed", icon: Check },
+  { label: "Queued", icon: Clock3 },
+  { label: "Scheduled", icon: Clock3 },
+  { label: "Failed", icon: RotateCcw },
+  { label: "History", icon: History },
+];
+
+const formatBytes = (bytes: number) => {
+  if (!bytes) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  return `${(bytes / 1024 ** index).toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
+};
+
+const formatSpeed = (bytesPerSecond: number) => `${formatBytes(bytesPerSecond)}/s`;
+
+const formatEta = (seconds: number) => {
+  if (!seconds) return "—";
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  return minutes ? `${minutes}m ${remainingSeconds}s` : `${remainingSeconds}s`;
+};
+
+function StatCard({ label, value, detail, icon: Icon, accent }: { label: string; value: string; detail: string; icon: typeof Gauge; accent: string }) {
+  return (
+    <article className="stat-card">
+      <div className="stat-card__topline">
+        <span>{label}</span>
+        <span className="stat-card__icon" style={{ color: accent }}><Icon size={16} strokeWidth={2.2} /></span>
+      </div>
+      <strong>{value}</strong>
+      <small>{detail}</small>
+    </article>
+  );
+}
+
+function EmptyDownloads({ onAdd }: { onAdd: () => void }) {
+  return (
+    <section className="empty-state">
+      <div className="empty-state__icon"><ArrowDownToLine size={26} /></div>
+      <div className="section-kicker">YOUR DOWNLOADS</div>
+      <h2>Ready for your first download?</h2>
+      <p>Add a URL and ZYNERO will handle the rest with secure, resumable transfers.</p>
+      <button className="button button--primary" type="button" onClick={onAdd}>
+        <Plus size={17} /> Add your first download
+      </button>
+      <div className="empty-state__hint"><ShieldCheck size={14} /> Files stay on your device</div>
+    </section>
+  );
+}
+
+function DownloadCard({ item }: { item: DownloadItem }) {
+  const progress = Math.round((item.downloaded / item.size) * 100);
+  const isPaused = item.status === "queued";
+  return (
+    <article className="download-card">
+      <div className="download-card__header">
+        <div className="file-mark"><Archive size={18} /></div>
+        <div className="download-card__identity">
+          <strong>{item.name}</strong>
+          <span>{item.url}</span>
+        </div>
+        <button className="icon-button" type="button" aria-label="More download actions"><MoreHorizontal size={19} /></button>
+      </div>
+      <div className="download-card__progress-row"><span>{progress}%</span><span>{formatBytes(item.downloaded)} of {formatBytes(item.size)}</span></div>
+      <div className="progress-track"><span style={{ width: `${progress}%` }} /></div>
+      <div className="download-card__footer">
+        <span className="status-pill"><span className={`status-dot status-dot--${item.status}`} />{isPaused ? "Queued" : "Downloading"}</span>
+        <span>{formatSpeed(item.speed)}</span><span>ETA {formatEta(item.etaSeconds)}</span><span>{item.connections} connections</span>
+        <button className="icon-button icon-button--small" type="button" aria-label={isPaused ? "Resume download" : "Pause download"}>{isPaused ? <Play size={15} /> : <Pause size={15} />}</button>
+      </div>
+    </article>
+  );
+}
+
+function AddDownloadModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (url: string, destination: string) => void }) {
+  const [url, setUrl] = useState("");
+  const [destination, setDestination] = useState("Downloads");
+  const [error, setError] = useState("");
+  const submit = () => {
+    try {
+      const parsed = new URL(url);
+      if (!/^https?:$/.test(parsed.protocol)) throw new Error();
+      onSubmit(url.trim(), destination);
+    } catch {
+      setError("Enter a valid HTTP or HTTPS URL.");
+    }
+  };
+
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <section className="modal" role="dialog" aria-modal="true" aria-labelledby="add-download-title">
+        <div className="modal__header"><div><div className="section-kicker">NEW TRANSFER</div><h2 id="add-download-title">Add download</h2></div><button className="icon-button" type="button" onClick={onClose} aria-label="Close dialog"><X size={19} /></button></div>
+        <label className="field-label" htmlFor="download-url">Download URL</label>
+        <div className={`url-field ${error ? "url-field--error" : ""}`}><ExternalLink size={17} /><input id="download-url" autoFocus value={url} onChange={(event) => { setUrl(event.target.value); setError(""); }} placeholder="https://example.com/file.zip" onKeyDown={(event) => event.key === "Enter" && submit()} /></div>
+        {error && <p className="field-error">{error}</p>}
+        <label className="field-label" htmlFor="destination">Save to</label>
+        <div className="select-field"><FolderOpen size={17} /><select id="destination" value={destination} onChange={(event) => setDestination(event.target.value)}><option>Downloads</option><option>Desktop</option><option>Documents</option></select><ChevronDown size={16} /></div>
+        <div className="modal__note"><ShieldCheck size={16} /><span>URL validation and file safety checks will run in the Rust engine.</span></div>
+        <div className="modal__actions"><button className="button button--ghost" type="button" onClick={onClose}>Cancel</button><button className="button button--primary" type="button" onClick={submit}><ArrowDownToLine size={16} /> Start download</button></div>
+      </section>
+    </div>
+  );
+}
+
 function App() {
+  const [activeNav, setActiveNav] = useState("Downloads");
+  const [isModalOpen, setModalOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [downloads, setDownloads] = useState<DownloadItem[]>([]);
+  const [toast, setToast] = useState("");
+
+  const filteredDownloads = useMemo(() => downloads.filter((item) => item.name.toLowerCase().includes(search.toLowerCase())), [downloads, search]);
+  const handleSubmit = (url: string, destination: string) => {
+    const name = decodeURIComponent(url.split("/").pop() || "download");
+    setDownloads((current) => [{ id: crypto.randomUUID(), name, url, size: 0, downloaded: 0, speed: 0, etaSeconds: 0, status: "queued", connections: 1, destination }, ...current]);
+    setModalOpen(false);
+    setToast("Download queued. Rust IPC connection is next.");
+    window.setTimeout(() => setToast(""), 4200);
+  };
+
   return (
     <main className="app-shell">
       <aside className="sidebar">
-        <div className="brand">ZYNERO</div>
-        <div className="tagline">Download. Faster. Smarter.</div>
-        <nav aria-label="Primary navigation">
-          <a className="active" href="#downloads">Downloads</a>
-          <a href="#active">Active</a>
-          <a href="#completed">Completed</a>
-          <a href="#queued">Queued</a>
-          <a href="#scheduled">Scheduled</a>
-          <a href="#failed">Failed</a>
-          <a href="#history">History</a>
+        <div className="brand-lockup"><div className="brand-mark"><Sparkles size={17} /></div><div><div className="brand">ZYNERO</div><div className="tagline">Download. Faster. Smarter.</div></div></div>
+        <div className="workspace-label">WORKSPACE</div>
+        <nav className="main-nav" aria-label="Primary navigation">
+          {navItems.map(({ label, icon: Icon }) => <button key={label} className={`nav-item ${activeNav === label ? "nav-item--active" : ""}`} type="button" onClick={() => setActiveNav(label)}><Icon size={17} /><span>{label}</span>{label === "Downloads" && <span className="nav-count">{downloads.length}</span>}</button>)}
         </nav>
-        <a className="settings-link" href="#settings">Settings</a>
+        <div className="sidebar-bottom"><div className="storage-card"><div className="storage-card__title"><span>Storage</span><span>Ready</span></div><div className="storage-bar"><span /></div><small>Local files only</small></div><button className="nav-item" type="button"><Settings size={17} /><span>Settings</span></button><div className="version">ZYNERO v0.1.0 · MVP</div></div>
       </aside>
       <section className="content">
-        <header className="topbar">
-          <div>
-            <p className="eyebrow">DOWNLOAD MANAGER</p>
-            <h1>Downloads</h1>
-          </div>
-          <button type="button" disabled title="Rust IPC will be connected in the next task">
-            Add download
-          </button>
-        </header>
-        <section className="empty-state" aria-live="polite">
-          <h2>Ready for your first download</h2>
-          <p>The interface shell is ready. Download data will come from the Rust engine through secure Tauri events.</p>
-        </section>
+        <header className="topbar"><div><div className="section-kicker">DOWNLOAD MANAGER <span className="live-indicator"><span /> LOCAL ENGINE</span></div><h1>{activeNav}</h1><p className="page-subtitle">Keep every transfer organized and moving.</p></div><button className="button button--primary" type="button" onClick={() => setModalOpen(true)}><Plus size={17} /> Add download</button></header>
+        <section className="stats-grid"><StatCard label="Total downloads" value={`${downloads.length}`} detail="Across your workspace" icon={Download} accent="#74c9ff" /><StatCard label="Active speed" value="—" detail="Waiting for Rust engine" icon={Gauge} accent="#9ee7bd" /><StatCard label="Completed" value="0" detail="Nothing finished yet" icon={Check} accent="#c8b6ff" /><StatCard label="Scheduled" value="0" detail="No scheduled transfers" icon={Clock3} accent="#f4c46e" /></section>
+        <div className="toolbar"><div className="search-field"><Search size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search downloads" aria-label="Search downloads" /></div><button className="toolbar-button" type="button"><ListFilter size={16} /> Filter <ChevronDown size={14} /></button></div>
+        {filteredDownloads.length ? <section className="download-list" aria-label="Downloads">{filteredDownloads.map((item) => <DownloadCard key={item.id} item={item} />)}</section> : <EmptyDownloads onAdd={() => setModalOpen(true)} />}
+        <footer className="content-footer"><span><span className="footer-dot" /> Secure local workspace</span><span>Backend status: <strong>Ready for IPC</strong></span></footer>
       </section>
+      {toast && <div className="toast"><Check size={16} />{toast}<button type="button" onClick={() => setToast("")} aria-label="Dismiss notification"><X size={14} /></button></div>}
+      {isModalOpen && <AddDownloadModal onClose={() => setModalOpen(false)} onSubmit={handleSubmit} />}
     </main>
   );
 }
 
-createRoot(document.getElementById("root")!).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>,
-);
+export default App;

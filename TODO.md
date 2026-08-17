@@ -47,9 +47,9 @@
 
 ## E. React masaüstü arayüzü
 
-- [ ] E01 — Windows 11 esintili responsive shell ve sidebar oluştur.
+- [x] E01 — Windows 11 esintili responsive shell ve sidebar oluştur. Responsive sidebar, workspace navigasyonu, storage kartı ve temel uygulama shell'i eklendi.
 - [ ] E02 — Dashboard'u yalnızca gerçek Rust/SQLite verileriyle besle.
-- [ ] E03 — Download card: progress, bytes, speed, ETA, connection count, status ve eylemler.
+- [x] E03 — Download card: progress, bytes, speed, ETA, connection count, status ve eylemler. Backend tipine hazır DownloadCard bileşeni ve durum görselleri eklendi.
 - [ ] E04 — Add Download penceresini gerçek `add_download` command'ına bağla.
 - [ ] E05 — Active, Completed, Queued, Scheduled, Failed ve History görünümlerini ekle.
 - [ ] E06 — Pause/resume/cancel/delete/open file/open folder eylemlerini IPC'ye bağla.
@@ -104,3 +104,4 @@
 | 2026-08-17 | A01 repository iskeleti | Tamamlandı | `pnpm --filter @zynero/desktop typecheck` ve `build` başarılı; Rust/cargo/rustup eksikliği A02'yi engelliyor |
 | 2026-08-17 | J01 GitHub repository | Tamamlandı | `main` branch pushlandı; GitHub üzerinde 2 commit ve README doğrulandı |
 | 2026-08-17 | A02/A03 Tauri katmanı | Tamamlandı | Rust 1.97.1, Tauri CLI 2.11.4, MSVC ve WebView2 kuruldu; `cargo check`, frontend build ve Windows EXE/MSI/NSIS üretimi başarılı |
+| 2026-08-17 | E01/E03 frontend bileşenleri | Tamamlandı | Responsive Dashboard shell, sidebar, stats, search/filter toolbar, empty state, DownloadCard ve Add Download modalı; typecheck/build başarılı |
