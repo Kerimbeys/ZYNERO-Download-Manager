@@ -91,6 +91,10 @@
 - [ ] I05 — v0.1 release candidate üret; Windows 10/11 temiz makine smoke test'i yap.
 - [ ] I06 — v0.2/v0.3/v1.0 kapsamını ayrı milestone'lara böl.
 
+## J. Repository ve paylaşım
+
+- [x] J01 — `Kerimbeys/ZYNERO-Download-Manager` GitHub repository'sini doğrula, yerel `main` branch'ini bağla ve ilk commit'leri pushla.
+
 ## Günlük ilerleme kaydı
 
 | Tarih | Görev | Sonuç | Doğrulama |
@@ -98,3 +102,4 @@
 | 2026-08-17 | Proje belgeleri analizi | Tamamlandı | `PROJECT_ANALYSIS.md` oluşturuldu |
 | 2026-08-17 | TODO çalışma planı | Tamamlandı | Bu dosya oluşturuldu |
 | 2026-08-17 | A01 repository iskeleti | Tamamlandı | `pnpm --filter @zynero/desktop typecheck` ve `build` başarılı; Rust/cargo/rustup eksikliği A02'yi engelliyor |
+| 2026-08-17 | J01 GitHub repository | Tamamlandı | `main` branch pushlandı; GitHub üzerinde 2 commit ve README doğrulandı |
