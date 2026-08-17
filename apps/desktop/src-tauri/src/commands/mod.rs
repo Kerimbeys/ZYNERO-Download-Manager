@@ -5,6 +5,9 @@ use crate::{
 };
 use reqwest::header::{ACCEPT_RANGES, CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE, RANGE};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use std::fs::File;
+use std::io::{BufReader, Read};
 use std::path::Path;
 use tauri::{command, State};
 use url::Url;
@@ -187,6 +190,47 @@ pub fn resume_download(
 #[command]
 pub fn cancel_download(id: String, manager: State<'_, DownloadManager>) -> Result<(), String> {
     manager.cancel(&id)
+}
+
+#[command]
+pub fn verify_download_hash(
+    id: String,
+    expected_sha256: String,
+    database: State<'_, DatabaseState>,
+) -> Result<bool, String> {
+    let expected = expected_sha256.trim().to_ascii_lowercase();
+    if expected.len() != 64
+        || !expected
+            .chars()
+            .all(|character| character.is_ascii_hexdigit())
+    {
+        return Err("Expected SHA-256 must be a 64-character hexadecimal string".to_string());
+    }
+    let download = database
+        .find_download(&id)?
+        .ok_or_else(|| "Download not found".to_string())?;
+    if download.status != "completed" {
+        return Err("Only completed downloads can be verified".to_string());
+    }
+    let path = download
+        .final_path
+        .ok_or_else(|| "Download has no finalized file".to_string())?;
+    let file =
+        File::open(&path).map_err(|error| format!("Could not open finalized file: {error}"))?;
+    let mut reader = BufReader::new(file);
+    let mut hasher = Sha256::new();
+    let mut buffer = [0_u8; 1024 * 1024];
+    loop {
+        let read = reader
+            .read(&mut buffer)
+            .map_err(|error| format!("Could not read finalized file: {error}"))?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    let actual = format!("{:x}", hasher.finalize());
+    Ok(actual == expected)
 }
 
 #[command]

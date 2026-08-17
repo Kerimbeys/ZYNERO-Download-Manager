@@ -39,7 +39,7 @@
 ## D. Çoklu bağlantı ve performans
 
 - [-] D01 — Segment hesaplama ve 1–32 bağlantı sınırlarını ekle. 1–32 bounded contiguous segment planner ve sınır testleri eklendi; worker concurrency entegrasyonu sonraki adım.
-- [ ] D02 — Range destekli sunucular için concurrent segment worker'ları yaz.
+- [-] D02 — Range destekli sunucular için concurrent segment worker'ları yaz. Gerçek bounded segment worker, Range 206 doğrulaması, paralel temp segment dosyaları, progress aggregation ve ordered merge eklendi; pause/cancel recovery ve integration testleri bekliyor.
 - [ ] D03 — Segment dosyası yazma, merge ve bütünlük kontrollerini güvenli hâle getir.
 - [ ] D04 — Range unsupported fallback ve hatalı Range response senaryolarını test et.
 - [ ] D05 — Global speed limiter ekle; `0 = unlimited` davranışını doğrula.
@@ -124,3 +124,15 @@
 | 2026-08-17 | F01/F02 queue runner | Tamamlandı | `start_queued_downloads` IPC, max-concurrent kapasite hesabı, 5 saniyelik auto-start runner ve queue schedule window gating; cargo check başarılı |
 | 2026-08-17 | F05 category foundation | Devam ediyor | `get_file_category` IPC ve extension mapping eklendi; cargo check başarılı; kategori UI ve destination routing bekliyor |
 | 2026-08-17 | K01 reusable skill | Tamamlandı | `/home/ubuntu/skills/zynero-download-manager-development/SKILL.md`; `quick_validate.py` başarılı |
+| 2026-08-17 | D02 segment worker foundation | Devam ediyor | Range destekli indirmeler için bounded concurrent workers, per-segment temp files, aggregate progress ve ordered merge eklendi; `cargo check`, `cargo fmt`, frontend typecheck/build başarılı; pause/cancel integration testleri bekliyor |
+
+## Devam oturumu — sonraki dikey dilimler
+
+- [ ] C11 — İlk resumable download milestone'unu uçtan uca doğrula ve cohesive commit oluştur.
+- [ ] D02 — Range destekli sunucular için concurrent segment worker'larını gerçek worker akışına bağla.
+- [ ] D03 — Segment dosyası yazma, merge ve bütünlük kontrollerini güvenli hâle getir.
+- [ ] D04 — Range unsupported fallback ve hatalı Range response senaryolarını test et.
+- [ ] E08 — Add, pause, resume, delete ve settings için UI testlerini çalıştır.
+- [ ] F03 — Windows completion/failure/queue notification'larını optional ayarlarla tamamla.
+- [ ] F04 — General, Downloads, Connections, Notifications, Appearance, Privacy ve Advanced ayarlarının kalan IPC akışlarını tamamla.
+- [ ] F05 — Kategori filtreleme sonrası kategori bazlı klasör routing ve UI görünürlüğünü tamamla.

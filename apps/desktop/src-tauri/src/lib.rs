@@ -29,10 +29,12 @@ pub fn run() {
             commands::pause_download,
             commands::resume_download,
             commands::cancel_download,
+            commands::verify_download_hash,
             commands::delete_download,
             commands::open_download_file,
             commands::open_download_folder
         ])
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let database = database::DatabaseState::open(
                 app.path()

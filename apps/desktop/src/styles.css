@@ -92,6 +92,10 @@ h1 { margin: 10px 0 7px; color: #f5f9ff; font-size: clamp(28px, 3vw, 38px); font
 .download-card__identity { min-width: 0; flex: 1; display: grid; gap: 4px; }
 .download-card__identity strong { overflow: hidden; color: #e6f0fa; font-size: 13px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .download-card__identity span { overflow: hidden; color: #698099; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.category-badge { justify-self: start; padding: 3px 7px; border: 1px solid rgba(116, 201, 255, .2); border-radius: 999px; color: var(--primary); background: rgba(116, 201, 255, .08); font-size: 9px !important; line-height: 1; }
+.category-filter { display: inline-flex; align-items: center; gap: 7px; min-height: 35px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); background: rgba(11, 21, 34, .8); }
+.category-filter select { border: 0; outline: 0; color: var(--primary); background: transparent; font: inherit; font-size: 10px; }
+.category-filter option { color: #17202a; background: #f5f8fb; }
 .download-card__progress-row { justify-content: space-between; margin: 17px 0 7px; color: #9fb0c2; font-size: 10px; }
 .download-card__progress-row span:first-child { color: var(--primary); font-weight: 750; }
 .progress-track { height: 5px; overflow: hidden; border-radius: 8px; background: #203247; }

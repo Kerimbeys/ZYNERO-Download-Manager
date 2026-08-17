@@ -30,3 +30,5 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 tokio = { version = "1", features = ["fs", "io-util", "macros", "net", "rt", "sync", "time"] }
 futures-util = "0.3"
 dirs = "6"
+sha2 = "0.10"
+tauri-plugin-notification = "2.3.3"

@@ -81,6 +81,11 @@ impl DatabaseState {
                 return Err(format!("Could not run queue schedule migration: {message}"));
             }
         }
+        connection
+            .execute_batch(include_str!(
+                "../../migrations/0005_segment_connections.sql"
+            ))
+            .map_err(|error| format!("Could not run segment settings migration: {error}"))?;
         Ok(Self {
             connection: Arc::new(Mutex::new(connection)),
         })
