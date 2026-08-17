@@ -17,10 +17,10 @@
 ## B. Kalıcı veri katmanı
 
 - [x] B01 — SQLite bağlantı ve uygulama veri dizini yönetimini ekle. `DatabaseState` uygulama data directory altında `zynero.sqlite3` açıyor ve startup'ta yönetiliyor.
-- [-] B02 — `downloads`, `segments`, `queues`, `settings` migrations oluştur. İlk `downloads` migration'ı ve status/created_at indexleri eklendi; segment/queue/settings şemaları sonraki migration'lara bırakıldı.
+- [x] B02 — `downloads`, `segments`, `queues`, `settings` migrations oluştur. `0001`, `0002` ve `0003` migration'ları ile tüm temel tablolar, runtime alanları, indexler ve varsayılan ayarlar eklendi.
 - [x] B03 — Repository katmanını yaz; frontend memory yerine gerçek CRUD kullan. `insert_download`, `list_downloads` ve `find_download` repository metotları eklendi; Dashboard `get_downloads` ile SQLite'dan besleniyor.
-- [ ] B04 — Download state transition kurallarını tanımla ve unit testlerini yaz.
-- [ ] B05 — Startup recovery için yarım kalan indirmeleri güvenli biçimde yükle.
+- [x] B04 — Download state transition kurallarını tanımla ve unit testlerini yaz. Geçerli lifecycle geçişleri ve hatalı geçiş reddi test edildi.
+- [x] B05 — Startup recovery için yarım kalan indirmeleri güvenli biçimde yükle. Startup'ta `active` kayıtlar paused state'e alınarak offset'ten resume'e hazır bırakılıyor.
 
 ## C. İlk gerçek indirme dilimi — en yüksek öncelik
 
@@ -33,7 +33,7 @@
 - [x] C07 — Gerçek pause: request cancellation, offset persist ve SQLite state update. Worker control flag ile stream'i durduruyor; temp file boyutu ve paused state kalıcı.
 - [x] C08 — Gerçek resume: persisted offset'ten devam et; destek yoksa açık hata/fallback davranışı uygula. Range destekliyse offset header kullanılıyor; 206 dönmezse sıfırdan güvenli fallback yapılıyor.
 - [x] C09 — Retry/backoff, timeout, HTTP hata sınıfları ve insan okunabilir hata mesajlarını ekle. 3 denemeli exponential backoff, connect/request timeout ve transient HTTP status handling eklendi.
-- [ ] C10 — Local HTTP test server ile HTTP, pause/resume, restart recovery ve failure integration testlerini yaz.
+- [-] C10 — Local HTTP test server ile HTTP, pause/resume, restart recovery ve failure integration testlerini yaz. Database transition/recovery unit testleri eklendi ve 2/2 geçti; local HTTP integration matrix sonraki adım.
 - [ ] C11 — İlk dikey milestone'u uçtan uca doğrula ve `feat(core): add resumable downloads` commit'ini oluştur.
 
 ## D. Çoklu bağlantı ve performans
@@ -114,4 +114,5 @@
 | 2026-08-17 | B01-B03/C02/E02 data layer | Tamamlandı | SQLite startup/migration, repository CRUD, HEAD/Range metadata ve Dashboard `get_downloads` entegrasyonu; cargo check/typecheck/build başarılı |
 | 2026-08-17 | C03-C05 download worker | Tamamlandı | Async reqwest streaming, `.zynero.part` temp dosyası, unique final path, Range resume, persisted progress/speed/ETA; cargo check başarılı |
 | 2026-08-17 | E06 lifecycle IPC | Tamamlandı | pause/resume/cancel/delete/open file/open folder IPC, Tauri progress event listener ve polling fallback; cargo check/typecheck/build başarılı |
+| 2026-08-17 | B02/B04/B05 data resilience | Tamamlandı | `0003_queues_segments_settings.sql`, lifecycle transition guard, startup recovery ve 2/2 Rust unit test başarılı |
 | 2026-08-17 | K01 reusable skill | Tamamlandı | `/home/ubuntu/skills/zynero-download-manager-development/SKILL.md`; `quick_validate.py` başarılı |

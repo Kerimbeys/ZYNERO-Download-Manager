@@ -28,6 +28,9 @@ pub fn run() {
                     .app_data_dir()
                     .map_err(|error| format!("Could not resolve app data directory: {error}"))?,
             )?;
+            database
+                .recover_incomplete()
+                .map_err(|error| Box::<dyn std::error::Error>::from(error))?;
             let manager = download::DownloadManager::new(database.clone())
                 .map_err(|error| Box::<dyn std::error::Error>::from(error))?;
             manager
