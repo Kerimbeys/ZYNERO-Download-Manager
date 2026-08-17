@@ -25,6 +25,7 @@ pub fn run() {
             commands::get_setting,
             commands::set_setting,
             commands::inspect_url,
+            commands::get_file_category,
             commands::pause_download,
             commands::resume_download,
             commands::cancel_download,

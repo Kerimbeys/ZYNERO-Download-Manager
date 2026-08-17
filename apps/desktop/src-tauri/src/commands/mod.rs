@@ -38,12 +38,22 @@ pub struct DownloadInfo {
     pub total_bytes: Option<i64>,
     pub content_type: Option<String>,
     pub supports_range: bool,
+    pub category: String,
 }
 
 #[command]
 pub async fn inspect_url(url: String) -> Result<RemoteMetadata, String> {
     let url = validate_url(&url)?;
     inspect_remote_url(url).await
+}
+
+#[command]
+pub fn get_file_category(filename: String) -> Result<String, String> {
+    let filename = filename.trim();
+    if filename.is_empty() {
+        return Err("Filename is required".to_string());
+    }
+    Ok(category_for_filename(filename))
 }
 
 #[command]
@@ -59,12 +69,13 @@ pub async fn add_download(
     let download = DownloadInfo {
         id: Uuid::new_v4().to_string(),
         url: metadata.url.clone(),
-        filename,
+        filename: filename.clone(),
         destination,
         status: "queued".to_string(),
         total_bytes: metadata.total_bytes,
         content_type: metadata.content_type.clone(),
         supports_range: metadata.supports_range,
+        category: category_for_filename(&filename),
     };
 
     let stored = StoredDownload {
@@ -341,6 +352,24 @@ fn validate_destination(destination: &str) -> Result<String, String> {
         "Downloads" | "Desktop" | "Documents" => Ok(destination.to_string()),
         _ => Err("Unsupported destination".to_string()),
     }
+}
+
+fn category_for_filename(filename: &str) -> String {
+    let extension = Path::new(filename)
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    match extension.as_str() {
+        "zip" | "rar" | "7z" | "tar" | "gz" | "bz2" | "xz" => "archives",
+        "mp3" | "wav" | "flac" | "aac" | "ogg" | "m4a" => "audio",
+        "mp4" | "mkv" | "avi" | "mov" | "webm" | "m4v" => "video",
+        "jpg" | "jpeg" | "png" | "gif" | "webp" | "svg" | "bmp" => "images",
+        "pdf" | "doc" | "docx" | "xls" | "xlsx" | "ppt" | "pptx" | "txt" | "md" => "documents",
+        "exe" | "msi" | "msix" | "dmg" | "deb" | "rpm" => "applications",
+        _ => "other",
+    }
+    .to_string()
 }
 
 fn filename_from_url(url: &Url) -> String {
