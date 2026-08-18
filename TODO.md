@@ -33,8 +33,8 @@
 - [x] C07 — Gerçek pause: request cancellation, offset persist ve SQLite state update. Worker control flag ile stream'i durduruyor; temp file boyutu ve paused state kalıcı.
 - [x] C08 — Gerçek resume: persisted offset'ten devam et; destek yoksa açık hata/fallback davranışı uygula. Range destekliyse offset header kullanılıyor; 206 dönmezse sıfırdan güvenli fallback yapılıyor.
 - [x] C09 — Retry/backoff, timeout, HTTP hata sınıfları ve insan okunabilir hata mesajlarını ekle. 3 denemeli exponential backoff, connect/request timeout ve transient HTTP status handling eklendi.
-- [-] C10 — Local HTTP test server ile HTTP, pause/resume, restart recovery ve failure integration testlerini yaz. Test binary derleniyor; Windows test çalıştırması `STATUS_ENTRYPOINT_NOT_FOUND` ile duruyor. Test binary'sini Tauri host bağımlılıklarından ayırmak veya MSVC runtime/DLL yükleme düzenini düzeltmek gerekiyor.
-- [ ] C11 — İlk dikey milestone'u uçtan uca doğrula ve `feat(core): add resumable downloads` commit'ini oluştur.
+- [x] C10 — Local HTTP test server ile HTTP, pause/resume, restart recovery ve failure integration testlerini yaz. Tauri/WebView bootstrap test koşulundan ayrıştırıldı; Windows `cargo test --lib download::tests` sonucu 5/5 başarılı: retry, resumable Range 206, paused state, HTTP 404 failure ve temp path senaryoları.
+- [x] C11 — İlk dikey milestone'u uçtan uca doğrula ve `feat(core): add resumable downloads` commit'ini oluştur. Mevcut `.part` dosyasından Range offset ile kalan veri indirildi, final dosya byte-for-byte doğrulandı ve SQLite status `completed` oldu; test evidence hazır, cohesive commit/push son adım.
 
 ## D. Çoklu bağlantı ve performans
 
@@ -116,7 +116,7 @@
 | 2026-08-17 | E06 lifecycle IPC | Tamamlandı | pause/resume/cancel/delete/open file/open folder IPC, Tauri progress event listener ve polling fallback; cargo check/typecheck/build başarılı |
 | 2026-08-17 | B02/B04/B05 data resilience | Tamamlandı | `0003_queues_segments_settings.sql`, lifecycle transition guard, startup recovery ve 2/2 Rust unit test başarılı |
 | 2026-08-17 | E05/E07 frontend completion | Tamamlandı | Status navigation filtreleri, gerçek aktif/completed stats, system-aware theme başlangıcı ve localStorage tema kalıcılığı; typecheck/build başarılı |
-| 2026-08-17 | C10 test hazırlığı | Devam ediyor | Local TCP HTTP retry ve temp path testleri eklendi; test binary derleniyor ancak Windows'ta `STATUS_ENTRYPOINT_NOT_FOUND` nedeniyle çalıştırma engelli |
+| 2026-08-18 | C10/C11 local HTTP milestone | Tamamlandı | Windows `cargo test --lib download::tests` 5/5 başarılı: retry, resumable Range 206, paused state, 404 failure ve temp path; C11 final dosya ve SQLite completed state doğrulandı |
 | 2026-08-17 | F01 queue/settings backend | Devam ediyor | QueueRecord/settings repository CRUD, validation ve `get_queues/save_queue/get_setting/set_setting` Tauri commands eklendi; cargo check/typecheck/build başarılı |
 | 2026-08-17 | F02 scheduler foundation | Devam ediyor | `0004_queue_schedule.sql`, RFC3339 schedule window evaluator ve `evaluate_queue_schedule` IPC eklendi; cargo check/typecheck/build başarılı; otomatik queue runner bekliyor |
 | 2026-08-17 | F04 settings foundation | Devam ediyor | Settings paneli, max concurrent/auto-start `set_setting` IPC ve tema seçenekleri eklendi; typecheck/build başarılı |
@@ -128,7 +128,7 @@
 
 ## Devam oturumu — sonraki dikey dilimler
 
-- [ ] C11 — İlk resumable download milestone'unu uçtan uca doğrula ve cohesive commit oluştur.
+- [x] C11 — İlk resumable download milestone'unu uçtan uca doğrula ve cohesive commit oluştur. Windows local HTTP testleri başarılı; commit/push son adım.
 - [ ] D02 — Range destekli sunucular için concurrent segment worker'larını gerçek worker akışına bağla.
 - [ ] D03 — Segment dosyası yazma, merge ve bütünlük kontrollerini güvenli hâle getir.
 - [ ] D04 — Range unsupported fallback ve hatalı Range response senaryolarını test et.
@@ -158,4 +158,11 @@
 - [x] Kritik ürün akışlarının mevcut gerçek backend bağlantısını doğrula; mock veya sahte ilerleme eklenmedi.
 - [x] Windows smoke testini çalıştır; release `zynero.exe` gerçek pencereyi `ZYNERO` başlığıyla açtı ve process yanıt veriyor.
 - [x] Windows installer/`.exe` paketini oluştur. NSIS ve MSI çıktıları üretildi.
-- [-] Release notlarını, checksum bilgisini ve kullanım talimatlarını ekle. `RELEASE_NOTES_v0.1.0.md` hazırlandı ve NSIS installer SHA-256 doğrulandı; GitHub release asset yüklemesi sonraki teslim adımı.
+- [-] Release notlarını, checksum bilgisini ve kullanım talimatlarını ekle. `RELEASE_NOTES_v0.1.0.md` commit edilip `main` branch'ine pushlandı; installer SHA-256 doğrulandı. GitHub Release asset yüklemesi GitHub API `403 Resource not accessible by integration` nedeniyle tamamlanamadı; installer yerel teslim eki olarak hazır.
+
+## C10/C11 doğrulama oturumu
+
+- [ ] C10 — Windows local HTTP integration test runner’ını ve entrypoint sorununu düzelt.
+- [ ] C10 — HTTP, pause/resume, restart recovery ve failure senaryolarını gerçek testlerle çalıştır.
+- [ ] C11 — Resumable download uçtan uca milestone’unu doğrula.
+- [ ] C11 — TODO evidence kaydını, cohesive commit’i ve GitHub main teslimini tamamla.

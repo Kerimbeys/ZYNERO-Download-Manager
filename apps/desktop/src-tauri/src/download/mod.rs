@@ -11,6 +11,7 @@ use std::{
     },
     time::{Duration, Instant},
 };
+#[cfg(not(test))]
 use tauri::{AppHandle, Emitter};
 use tokio::{
     fs::{self, OpenOptions},
@@ -22,6 +23,7 @@ pub struct DownloadManager {
     database: DatabaseState,
     controls: Arc<Mutex<HashMap<String, Arc<Control>>>>,
     client: reqwest::Client,
+    #[cfg(not(test))]
     app_handle: Arc<Mutex<Option<AppHandle>>>,
 }
 
@@ -42,10 +44,12 @@ impl DownloadManager {
             database,
             controls: Arc::new(Mutex::new(HashMap::new())),
             client,
+            #[cfg(not(test))]
             app_handle: Arc::new(Mutex::new(None)),
         })
     }
 
+    #[cfg(not(test))]
     pub fn set_app_handle(&self, handle: AppHandle) -> Result<(), String> {
         *self
             .app_handle
@@ -54,6 +58,7 @@ impl DownloadManager {
         Ok(())
     }
 
+    #[cfg(not(test))]
     fn emit_progress(&self, id: &str) {
         let handle = self.app_handle.lock().ok().and_then(|value| value.clone());
         if let (Some(handle), Ok(Some(download))) = (handle, self.database.find_download(id)) {
@@ -61,6 +66,8 @@ impl DownloadManager {
         }
     }
 
+    #[cfg(test)]
+    fn emit_progress(&self, _id: &str) {}
     pub fn start(&self, download: StoredDownload) -> Result<(), String> {
         let control = Arc::new(Control {
             paused: AtomicBool::new(false),
@@ -71,7 +78,7 @@ impl DownloadManager {
             .map_err(|_| "Download manager lock poisoned".to_string())?
             .insert(download.id.clone(), control.clone());
         let manager = self.clone();
-        tauri::async_runtime::spawn(async move {
+        tokio::spawn(async move {
             let result = manager.run(download.clone(), control).await;
             if let Err(error) = result {
                 let _ = manager.database.update_runtime(
@@ -623,6 +630,170 @@ mod tests {
         assert_eq!(temp.parent(), final_path.parent());
         drop(database);
         let _ = std::fs::remove_dir_all(path);
+    }
+    #[tokio::test]
+    async fn resumable_download_completes_from_existing_part() {
+        let payload = b"ZYNERO-C11-resumable-payload".to_vec();
+        let prefix_len = 7usize;
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind local server");
+        let address = listener.local_addr().expect("local address");
+        let expected = payload.clone();
+        tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.expect("accept request");
+            let mut request = [0u8; 2048];
+            let size = socket.read(&mut request).await.expect("read request");
+            let request = String::from_utf8_lossy(&request[..size]).to_ascii_lowercase();
+            assert!(request.contains("range: bytes=7-"));
+            let remaining = &expected[prefix_len..];
+            let response = format!(
+                "HTTP/1.1 206 Partial Content\r\nContent-Length: {}\r\nContent-Range: bytes 7-{}/{}\r\nConnection: close\r\n\r\n",
+                remaining.len(),
+                expected.len() - 1,
+                expected.len()
+            );
+            socket
+                .write_all(response.as_bytes())
+                .await
+                .expect("write headers");
+            socket.write_all(remaining).await.expect("write body");
+        });
+
+        let root = std::env::temp_dir().join(format!("zynero-c11-db-{}", uuid::Uuid::new_v4()));
+        let database = DatabaseState::open(root.clone()).expect("open test database");
+        database
+            .set_setting("connections_per_download", "1")
+            .expect("set single connection");
+        let filename = format!("zynero-c11-{}.bin", uuid::Uuid::new_v4());
+        let url = format!("http://{address}/payload");
+        let mut download = sample(url);
+        download.id = uuid::Uuid::new_v4().to_string();
+        download.filename = filename;
+        download.total_bytes = Some(payload.len() as i64);
+        download.downloaded_bytes = prefix_len as i64;
+        download.supports_range = true;
+        database
+            .insert_download(&download)
+            .expect("insert download");
+
+        let (temp_path, final_path) = resolve_paths(&download).expect("resolve paths");
+        if let Some(parent) = temp_path.parent() {
+            tokio::fs::create_dir_all(parent)
+                .await
+                .expect("create download dir");
+        }
+        tokio::fs::write(&temp_path, &payload[..prefix_len])
+            .await
+            .expect("write partial file");
+        let manager = DownloadManager::new(database.clone()).expect("create manager");
+        let control = Arc::new(Control {
+            paused: AtomicBool::new(false),
+            cancelled: AtomicBool::new(false),
+        });
+        manager
+            .run(download.clone(), control)
+            .await
+            .expect("complete resume");
+
+        let actual = tokio::fs::read(&final_path).await.expect("read final file");
+        assert_eq!(actual, payload);
+        let stored = database
+            .find_download(&download.id)
+            .expect("read stored download")
+            .expect("download exists");
+        assert_eq!(stored.status, "completed");
+        assert_eq!(stored.downloaded_bytes, payload.len() as i64);
+        drop(database);
+        let _ = std::fs::remove_file(final_path);
+        let _ = std::fs::remove_dir_all(root);
+    }
+    #[tokio::test]
+    async fn download_pauses_before_writing_when_control_paused() {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind local server");
+        let address = listener.local_addr().expect("local address");
+        tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.expect("accept request");
+            let mut request = [0u8; 1024];
+            let _ = socket.read(&mut request).await;
+            socket
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 12\r\nConnection: close\r\n\r\nhello world!")
+                .await
+                .expect("write response");
+        });
+        let root = std::env::temp_dir().join(format!("zynero-c10-pause-{}", uuid::Uuid::new_v4()));
+        let database = DatabaseState::open(root.clone()).expect("open test database");
+        database
+            .set_setting("connections_per_download", "1")
+            .expect("set single connection");
+        let mut download = sample(format!("http://{address}/pause"));
+        download.id = uuid::Uuid::new_v4().to_string();
+        download.filename = format!("zynero-c10-pause-{}.bin", uuid::Uuid::new_v4());
+        database
+            .insert_download(&download)
+            .expect("insert download");
+        let manager = DownloadManager::new(database.clone()).expect("create manager");
+        let control = Arc::new(Control {
+            paused: AtomicBool::new(true),
+            cancelled: AtomicBool::new(false),
+        });
+        manager
+            .run(download.clone(), control)
+            .await
+            .expect("pause is a normal state");
+        let stored = database
+            .find_download(&download.id)
+            .expect("read stored download")
+            .expect("download exists");
+        assert_eq!(stored.status, "paused");
+        assert_eq!(stored.downloaded_bytes, 0);
+        drop(database);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn download_rejects_local_http_failure() {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind local server");
+        let address = listener.local_addr().expect("local address");
+        tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.expect("accept request");
+            let mut request = [0u8; 1024];
+            let _ = socket.read(&mut request).await;
+            socket
+                .write_all(
+                    b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                )
+                .await
+                .expect("write failure response");
+        });
+        let root =
+            std::env::temp_dir().join(format!("zynero-c10-failure-{}", uuid::Uuid::new_v4()));
+        let database = DatabaseState::open(root.clone()).expect("open test database");
+        database
+            .set_setting("connections_per_download", "1")
+            .expect("set single connection");
+        let mut download = sample(format!("http://{address}/missing"));
+        download.id = uuid::Uuid::new_v4().to_string();
+        download.filename = format!("zynero-c10-failure-{}.bin", uuid::Uuid::new_v4());
+        database
+            .insert_download(&download)
+            .expect("insert download");
+        let manager = DownloadManager::new(database.clone()).expect("create manager");
+        let control = Arc::new(Control {
+            paused: AtomicBool::new(false),
+            cancelled: AtomicBool::new(false),
+        });
+        let error = manager
+            .run(download, control)
+            .await
+            .expect_err("404 must fail");
+        assert!(error.contains("HTTP 404"));
+        drop(database);
+        let _ = std::fs::remove_dir_all(root);
     }
 }
 
