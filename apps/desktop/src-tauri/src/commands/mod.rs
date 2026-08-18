@@ -66,9 +66,11 @@ pub async fn add_download(
     manager: State<'_, DownloadManager>,
 ) -> Result<DownloadInfo, String> {
     let url = validate_url(&request.url)?;
-    let destination = validate_destination(&request.destination)?;
+    let requested_destination = validate_destination(&request.destination)?;
     let filename = filename_from_url(&url);
     let metadata = inspect_remote_url(url.clone()).await?;
+    let category = category_for_filename(&filename);
+    let destination = resolve_destination(&requested_destination, &category, &database)?;
     let download = DownloadInfo {
         id: Uuid::new_v4().to_string(),
         url: metadata.url.clone(),
@@ -78,7 +80,7 @@ pub async fn add_download(
         total_bytes: metadata.total_bytes,
         content_type: metadata.content_type.clone(),
         supports_range: metadata.supports_range,
-        category: category_for_filename(&filename),
+        category,
     };
 
     let stored = StoredDownload {
@@ -393,9 +395,24 @@ fn validate_url(raw_url: &str) -> Result<Url, String> {
 
 fn validate_destination(destination: &str) -> Result<String, String> {
     match destination {
-        "Downloads" | "Desktop" | "Documents" => Ok(destination.to_string()),
+        "Auto" | "Downloads" | "Desktop" | "Documents" => Ok(destination.to_string()),
         _ => Err("Unsupported destination".to_string()),
     }
+}
+
+fn resolve_destination(
+    requested: &str,
+    category: &str,
+    database: &DatabaseState,
+) -> Result<String, String> {
+    if requested != "Auto" {
+        return Ok(requested.to_string());
+    }
+    let key = format!("category_folder_{category}");
+    Ok(database
+        .get_setting(&key)?
+        .filter(|value| matches!(value.as_str(), "Downloads" | "Desktop" | "Documents"))
+        .unwrap_or_else(|| "Downloads".to_string()))
 }
 
 fn category_for_filename(filename: &str) -> String {
@@ -437,5 +454,36 @@ fn filename_from_url(url: &Url) -> String {
         "download".to_string()
     } else {
         sanitized.chars().take(180).collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_unsafe_url_schemes_and_embedded_credentials() {
+        assert!(validate_url("file:///C:/secret.bin").is_err());
+        assert!(validate_url("https://user:password@example.com/file.bin").is_err());
+        assert!(validate_url("https:///missing-host").is_err());
+        assert!(validate_url("https://example.com/file.bin").is_ok());
+    }
+
+    #[test]
+    fn validates_known_destinations_only() {
+        assert!(validate_destination("Auto").is_ok());
+        assert!(validate_destination("Downloads").is_ok());
+        assert!(validate_destination("C:\\Users\\Public").is_err());
+        assert!(validate_destination("../../Desktop").is_err());
+    }
+
+    #[test]
+    fn sanitizes_filename_and_preserves_category_mapping() {
+        let url = Url::parse("https://example.com/%2E%2E%2Fpayload.exe").expect("valid URL");
+        let filename = filename_from_url(&url);
+        assert!(!filename.contains('/'));
+        assert!(!filename.contains('\\'));
+        assert_eq!(category_for_filename("archive.zip"), "archives");
+        assert_eq!(category_for_filename("installer.msi"), "applications");
     }
 }

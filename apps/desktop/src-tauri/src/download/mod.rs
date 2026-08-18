@@ -32,12 +32,52 @@ struct Control {
     cancelled: AtomicBool,
 }
 
+#[derive(Clone)]
+struct RateLimiter {
+    limit_bps: i64,
+    next_slot: Arc<Mutex<Instant>>,
+}
+
+impl RateLimiter {
+    fn new(limit_bps: i64) -> Self {
+        Self {
+            limit_bps: limit_bps.max(0),
+            next_slot: Arc::new(Mutex::new(Instant::now())),
+        }
+    }
+
+    async fn acquire(&self, bytes: usize) {
+        if self.limit_bps == 0 || bytes == 0 {
+            return;
+        }
+        let duration = Duration::from_secs_f64(bytes as f64 / self.limit_bps as f64);
+        let delay = self
+            .next_slot
+            .lock()
+            .map(|mut next_slot| {
+                let now = Instant::now();
+                let slot = (*next_slot).max(now);
+                *next_slot = slot + duration;
+                slot.saturating_duration_since(now)
+            })
+            .unwrap_or_default();
+        if !delay.is_zero() {
+            tokio::time::sleep(delay).await;
+        }
+    }
+}
+
 impl DownloadManager {
     pub fn new(database: DatabaseState) -> Result<Self, String> {
-        let client = reqwest::Client::builder()
+        let mut client_builder = reqwest::Client::builder()
             .user_agent("ZYNERO/0.1.0")
             .connect_timeout(Duration::from_secs(15))
-            .timeout(Duration::from_secs(60))
+            .timeout(Duration::from_secs(60));
+        #[cfg(test)]
+        {
+            client_builder = client_builder.no_proxy();
+        }
+        let client = client_builder
             .build()
             .map_err(|error| format!("Could not create download client: {error}"))?;
         Ok(Self {
@@ -144,15 +184,54 @@ impl DownloadManager {
         let (temp_path, final_path) = resolve_paths(&download)?;
         let connections = self
             .database
-            .get_setting("connections_per_download")?
+            .get_setting("max_connections_per_download")?
+            .or(self.database.get_setting("connections_per_download")?)
             .and_then(|value| value.parse::<i64>().ok())
             .unwrap_or(3)
             .clamp(1, 32);
+        let speed_limit_bps = self
+            .database
+            .get_setting("global_speed_limit_bps")?
+            .and_then(|value| value.parse::<i64>().ok())
+            .unwrap_or(0)
+            .max(0);
+        let rate_limiter = Arc::new(RateLimiter::new(speed_limit_bps));
         if download.supports_range && download.total_bytes.unwrap_or(0) > 0 && connections > 1 {
-            return self
-                .run_segmented(download, control, temp_path, final_path, connections)
-                .await;
+            match self
+                .run_segmented(
+                    download.clone(),
+                    control.clone(),
+                    temp_path.clone(),
+                    final_path.clone(),
+                    connections,
+                    rate_limiter.clone(),
+                )
+                .await
+            {
+                Err(error) if error.starts_with("RANGE_UNSUPPORTED:") => {
+                    let segment_dir =
+                        temp_path.with_file_name(format!(".{}.segments", download.filename));
+                    let _ = fs::remove_dir_all(segment_dir).await;
+                    let _ = fs::remove_file(&temp_path).await;
+                    return self
+                        .run_stream(download, control, temp_path, final_path, rate_limiter)
+                        .await;
+                }
+                result => return result,
+            }
         }
+        self.run_stream(download, control, temp_path, final_path, rate_limiter)
+            .await
+    }
+
+    async fn run_stream(
+        &self,
+        download: StoredDownload,
+        control: Arc<Control>,
+        temp_path: PathBuf,
+        final_path: PathBuf,
+        rate_limiter: Arc<RateLimiter>,
+    ) -> Result<(), String> {
         self.database.set_paths(
             &download.id,
             temp_path.to_string_lossy().as_ref(),
@@ -212,6 +291,7 @@ impl DownloadManager {
                 return Ok(());
             }
             let chunk = chunk.map_err(|error| format!("Download stream failed: {error}"))?;
+            rate_limiter.acquire(chunk.len()).await;
             file.write_all(&chunk)
                 .await
                 .map_err(|error| format!("Could not write temp file: {error}"))?;
@@ -265,6 +345,7 @@ impl DownloadManager {
         temp_path: PathBuf,
         final_path: PathBuf,
         connections: i64,
+        rate_limiter: Arc<RateLimiter>,
     ) -> Result<(), String> {
         let total = download
             .total_bytes
@@ -293,6 +374,7 @@ impl DownloadManager {
             let worker_dir = segment_dir.clone();
             let shared_downloaded = total_downloaded.clone();
             let shared_last_update = last_update.clone();
+            let worker_rate_limiter = rate_limiter.clone();
             workers.spawn(async move {
                 let segment_path = worker_dir.join(format!("segment-{index:02}.part"));
                 let existing = match fs::metadata(&segment_path).await {
@@ -300,30 +382,56 @@ impl DownloadManager {
                     Err(_) => 0,
                 };
                 let expected = end - start + 1;
-                let completed = existing.clamp(0, expected);
+                let completed = if existing > expected {
+                    let _ = fs::remove_file(&segment_path).await;
+                    0
+                } else {
+                    existing
+                };
+                shared_downloaded.fetch_add(completed, Ordering::Relaxed);
                 if completed == expected {
-                    shared_downloaded.fetch_add(completed, Ordering::Relaxed);
                     return Ok::<(), String>(());
                 }
-                if completed > 0 {
-                    let _ = fs::remove_file(&segment_path).await;
-                }
-                let response = manager.request_range(&worker_download, start, end).await?;
+                let request_start = start + completed;
+                let response = manager
+                    .request_range(&worker_download, request_start, end)
+                    .await?;
                 if response.status().as_u16() != 206 {
+                    if response.status().is_success() {
+                        return Err(format!(
+                            "RANGE_UNSUPPORTED: segment {index} expected HTTP 206, got {}",
+                            response.status().as_u16()
+                        ));
+                    }
                     return Err(format!(
                         "Segment {index} expected HTTP 206, got {}",
                         response.status().as_u16()
                     ));
                 }
-                let mut file = OpenOptions::new()
-                    .create(true)
-                    .write(true)
-                    .truncate(true)
+                let expected_range = format!("bytes {request_start}-{end}/{total}");
+                let actual_range = response
+                    .headers()
+                    .get(reqwest::header::CONTENT_RANGE)
+                    .and_then(|value| value.to_str().ok())
+                    .unwrap_or_default();
+                if actual_range != expected_range {
+                    return Err(format!(
+                        "Segment {index} returned malformed Content-Range: expected {expected_range}, got {actual_range}"
+                    ));
+                }
+                let mut file_options = OpenOptions::new();
+                file_options.create(true).write(true);
+                if completed > 0 {
+                    file_options.append(true);
+                } else {
+                    file_options.truncate(true);
+                }
+                let mut file = file_options
                     .open(&segment_path)
                     .await
                     .map_err(|error| format!("Could not open segment {index}: {error}"))?;
                 let mut stream = response.bytes_stream();
-                let mut segment_downloaded = 0i64;
+                let mut segment_downloaded = completed;
                 while let Some(chunk) = stream.next().await {
                     if worker_control.cancelled.load(Ordering::Relaxed) {
                         return Err("Download cancelled".to_string());
@@ -337,6 +445,7 @@ impl DownloadManager {
                     if segment_downloaded > expected {
                         return Err(format!("Segment {index} exceeded its requested byte range"));
                     }
+                    worker_rate_limiter.acquire(chunk.len()).await;
                     file.write_all(&chunk)
                         .await
                         .map_err(|error| format!("Could not write segment {index}: {error}"))?;
@@ -426,6 +535,17 @@ impl DownloadManager {
             .await
             .map_err(|error| format!("Could not flush merged file: {error}"))?;
         drop(output);
+        let merged_length = fs::metadata(&temp_path)
+            .await
+            .map_err(|error| format!("Could not inspect merged file: {error}"))?
+            .len();
+        if merged_length != total as u64 {
+            let _ = fs::remove_file(&temp_path).await;
+            let _ = fs::remove_dir_all(&segment_dir).await;
+            return Err(format!(
+                "Merged file integrity check failed: expected {total} bytes, got {merged_length}"
+            ));
+        }
         let _ = fs::remove_dir_all(&segment_dir).await;
         if let Some(parent) = final_path.parent() {
             fs::create_dir_all(parent)
@@ -793,6 +913,284 @@ mod tests {
             .expect_err("404 must fail");
         assert!(error.contains("HTTP 404"));
         drop(database);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn zero_speed_limit_is_unlimited() {
+        let limiter = RateLimiter::new(0);
+        let started = Instant::now();
+        limiter.acquire(1024 * 1024).await;
+        assert!(started.elapsed() < Duration::from_millis(100));
+    }
+
+    #[tokio::test]
+    async fn segmented_download_merges_segments_in_byte_order() {
+        let payload: Vec<u8> = (0..48u8).collect();
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind server");
+        let address = listener.local_addr().expect("server address");
+        let expected = payload.clone();
+        tokio::spawn(async move {
+            for _ in 0..3 {
+                let (mut socket, _) = listener.accept().await.expect("accept range request");
+                let mut request = [0u8; 2048];
+                let size = socket.read(&mut request).await.expect("read request");
+                let request = String::from_utf8_lossy(&request[..size]);
+                let range = request
+                    .lines()
+                    .find_map(|line| line.strip_prefix("Range: bytes="))
+                    .or_else(|| {
+                        request
+                            .lines()
+                            .find_map(|line| line.strip_prefix("range: bytes="))
+                    })
+                    .expect("range header");
+                let (start, end) = range.split_once('-').expect("range bounds");
+                let start: usize = start.parse().expect("range start");
+                let end: usize = end.parse().expect("range end");
+                let body = &expected[start..=end];
+                let headers = format!(
+                    "HTTP/1.1 206 Partial Content\r\nContent-Length: {}\r\nContent-Range: bytes {}-{}/{}\r\nConnection: close\r\n\r\n",
+                    body.len(), start, end, expected.len()
+                );
+                socket
+                    .write_all(headers.as_bytes())
+                    .await
+                    .expect("write headers");
+                socket.write_all(body).await.expect("write body");
+            }
+        });
+        let root = std::env::temp_dir().join(format!("zynero-d03-merge-{}", uuid::Uuid::new_v4()));
+        let database = DatabaseState::open(root.clone()).expect("open database");
+        database
+            .set_setting("connections_per_download", "3")
+            .expect("set connections");
+        let mut download = sample(format!("http://{address}/ordered"));
+        download.id = uuid::Uuid::new_v4().to_string();
+        download.filename = format!("zynero-d03-{}.bin", uuid::Uuid::new_v4());
+        download.total_bytes = Some(payload.len() as i64);
+        download.supports_range = true;
+        database
+            .insert_download(&download)
+            .expect("insert download");
+        let (_, final_path) = resolve_paths(&download).expect("resolve paths");
+        let manager = DownloadManager::new(database.clone()).expect("create manager");
+        manager
+            .run(
+                download,
+                Arc::new(Control {
+                    paused: AtomicBool::new(false),
+                    cancelled: AtomicBool::new(false),
+                }),
+            )
+            .await
+            .expect("segmented download completes");
+        assert_eq!(
+            tokio::fs::read(&final_path)
+                .await
+                .expect("read merged file"),
+            payload
+        );
+        assert!(!final_path
+            .with_file_name(format!(
+                ".{}.segments",
+                final_path.file_name().unwrap().to_string_lossy()
+            ))
+            .exists());
+        let _ = std::fs::remove_file(final_path);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn segmented_download_resumes_partial_segment_before_merge() {
+        let payload: Vec<u8> = (0..48u8).collect();
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind server");
+        let address = listener.local_addr().expect("server address");
+        let expected = payload.clone();
+        tokio::spawn(async move {
+            for _ in 0..3 {
+                let (mut socket, _) = listener.accept().await.expect("accept range request");
+                let mut request = [0u8; 2048];
+                let size = socket.read(&mut request).await.expect("read request");
+                let request = String::from_utf8_lossy(&request[..size]);
+                let range = request
+                    .lines()
+                    .find_map(|line| line.strip_prefix("Range: bytes="))
+                    .or_else(|| {
+                        request
+                            .lines()
+                            .find_map(|line| line.strip_prefix("range: bytes="))
+                    })
+                    .expect("range header");
+                let (start, end) = range.split_once('-').expect("range bounds");
+                let start: usize = start.parse().expect("range start");
+                let end: usize = end.parse().expect("range end");
+                let body = &expected[start..=end];
+                let headers = format!(
+                    "HTTP/1.1 206 Partial Content\r\nContent-Length: {}\r\nContent-Range: bytes {}-{}/{}\r\nConnection: close\r\n\r\n",
+                    body.len(), start, end, expected.len()
+                );
+                socket
+                    .write_all(headers.as_bytes())
+                    .await
+                    .expect("write headers");
+                socket.write_all(body).await.expect("write body");
+            }
+        });
+        let root = std::env::temp_dir().join(format!("zynero-d02-resume-{}", uuid::Uuid::new_v4()));
+        let database = DatabaseState::open(root.clone()).expect("open database");
+        database
+            .set_setting("connections_per_download", "3")
+            .expect("set connections");
+        let mut download = sample(format!("http://{address}/resume"));
+        download.id = uuid::Uuid::new_v4().to_string();
+        download.filename = format!("zynero-d02-resume-{}.bin", uuid::Uuid::new_v4());
+        download.total_bytes = Some(payload.len() as i64);
+        download.supports_range = true;
+        database
+            .insert_download(&download)
+            .expect("insert download");
+        let (temp_path, final_path) = resolve_paths(&download).expect("resolve paths");
+        let segment_dir = temp_path.with_file_name(format!(".{}.segments", download.filename));
+        tokio::fs::create_dir_all(&segment_dir)
+            .await
+            .expect("create segment directory");
+        tokio::fs::write(segment_dir.join("segment-00.part"), &payload[..4])
+            .await
+            .expect("write partial segment");
+        let manager = DownloadManager::new(database.clone()).expect("create manager");
+        manager
+            .run(
+                download,
+                Arc::new(Control {
+                    paused: AtomicBool::new(false),
+                    cancelled: AtomicBool::new(false),
+                }),
+            )
+            .await
+            .expect("resumed segmented download completes");
+        assert_eq!(
+            tokio::fs::read(&final_path)
+                .await
+                .expect("read resumed file"),
+            payload
+        );
+        let _ = std::fs::remove_file(final_path);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn segmented_download_rejects_malformed_content_range() {
+        let payload = b"malformed-range-payload".to_vec();
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind server");
+        let address = listener.local_addr().expect("server address");
+        let expected = payload.clone();
+        tokio::spawn(async move {
+            for _ in 0..2 {
+                let (mut socket, _) = listener.accept().await.expect("accept range request");
+                let mut request = [0u8; 1024];
+                let _ = socket.read(&mut request).await;
+                let response = format!(
+                    "HTTP/1.1 206 Partial Content\r\nContent-Length: {}\r\nContent-Range: bytes 0-{} /{}\r\nConnection: close\r\n\r\n",
+                    expected.len(), expected.len() - 1, expected.len()
+                );
+                socket
+                    .write_all(response.as_bytes())
+                    .await
+                    .expect("write malformed headers");
+                socket.write_all(&expected).await.expect("write body");
+            }
+        });
+        let root =
+            std::env::temp_dir().join(format!("zynero-d03-invalid-{}", uuid::Uuid::new_v4()));
+        let database = DatabaseState::open(root.clone()).expect("open database");
+        database
+            .set_setting("connections_per_download", "2")
+            .expect("set connections");
+        let mut download = sample(format!("http://{address}/invalid"));
+        download.id = uuid::Uuid::new_v4().to_string();
+        download.filename = format!("zynero-d03-invalid-{}.bin", uuid::Uuid::new_v4());
+        download.total_bytes = Some(payload.len() as i64);
+        download.supports_range = true;
+        database
+            .insert_download(&download)
+            .expect("insert download");
+        let (_, final_path) = resolve_paths(&download).expect("resolve paths");
+        let manager = DownloadManager::new(database.clone()).expect("create manager");
+        let error = manager
+            .run(
+                download,
+                Arc::new(Control {
+                    paused: AtomicBool::new(false),
+                    cancelled: AtomicBool::new(false),
+                }),
+            )
+            .await
+            .expect_err("malformed range must fail");
+        assert!(error.contains("malformed Content-Range"));
+        assert!(!final_path.exists());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn range_unsupported_falls_back_to_single_stream() {
+        let payload = b"range-fallback-payload".to_vec();
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind server");
+        let address = listener.local_addr().expect("server address");
+        let expected = payload.clone();
+        tokio::spawn(async move {
+            for _ in 0..3 {
+                let (mut socket, _) = listener.accept().await.expect("accept request");
+                let mut request = [0u8; 2048];
+                let size = socket.read(&mut request).await.expect("read request");
+                let request = String::from_utf8_lossy(&request[..size]);
+                let headers = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    expected.len()
+                );
+                socket
+                    .write_all(headers.as_bytes())
+                    .await
+                    .expect("write headers");
+                socket.write_all(&expected).await.expect("write body");
+                if !request.contains("Range: bytes=") && !request.contains("range: bytes=") {
+                    break;
+                }
+            }
+        });
+        let root =
+            std::env::temp_dir().join(format!("zynero-d04-fallback-{}", uuid::Uuid::new_v4()));
+        let database = DatabaseState::open(root.clone()).expect("open database");
+        database
+            .set_setting("connections_per_download", "2")
+            .expect("set connections");
+        let mut download = sample(format!("http://{address}/fallback"));
+        download.id = uuid::Uuid::new_v4().to_string();
+        download.filename = format!("zynero-d04-fallback-{}.bin", uuid::Uuid::new_v4());
+        download.total_bytes = Some(payload.len() as i64);
+        download.supports_range = true;
+        database
+            .insert_download(&download)
+            .expect("insert download");
+        let (_, final_path) = resolve_paths(&download).expect("resolve paths");
+        let manager = DownloadManager::new(database.clone()).expect("create manager");
+        manager
+            .run(
+                download,
+                Arc::new(Control {
+                    paused: AtomicBool::new(false),
+                    cancelled: AtomicBool::new(false),
+                }),
+            )
+            .await
+            .expect("fallback completes");
+        assert_eq!(
+            tokio::fs::read(&final_path)
+                .await
+                .expect("read fallback file"),
+            payload
+        );
+        let _ = std::fs::remove_file(final_path);
         let _ = std::fs::remove_dir_all(root);
     }
 }

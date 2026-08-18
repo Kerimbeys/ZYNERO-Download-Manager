@@ -7,7 +7,12 @@
     "dev": "pnpm --filter @zynero/desktop dev",
     "build": "pnpm --filter @zynero/desktop build",
     "typecheck": "pnpm --filter @zynero/desktop typecheck",
-    "test": "pnpm --filter @zynero/desktop test"
+    "lint": "pnpm --filter @zynero/desktop lint",
+    "test": "pnpm --filter @zynero/desktop test",
+    "format:check": "cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml -- --check",
+    "rust:check": "cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml",
+    "rust:test": "cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib -- --nocapture",
+    "quality": "pnpm run lint && pnpm run typecheck && pnpm run build && pnpm run format:check && pnpm run rust:check && pnpm run rust:test"
   },
   "packageManager": "pnpm@10.33.0"
 }

@@ -86,6 +86,12 @@ impl DatabaseState {
                 "../../migrations/0005_segment_connections.sql"
             ))
             .map_err(|error| format!("Could not run segment settings migration: {error}"))?;
+        connection
+            .execute_batch(include_str!("../../../migrations/0006_speed_limit.sql"))
+            .map_err(|error| format!("Could not run speed limit migration: {error}"))?;
+        connection
+            .execute_batch(include_str!("../../../migrations/0007_notifications.sql"))
+            .map_err(|error| format!("Could not run notification migration: {error}"))?;
         Ok(Self {
             connection: Arc::new(Mutex::new(connection)),
         })

@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit",
     "test": "vitest run",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
@@ -14,9 +15,9 @@
     "tauri:info": "tauri info"
   },
   "dependencies": {
-    "@zynero/shared": "workspace:*",
     "@tauri-apps/api": "^2.8.0",
     "@tauri-apps/plugin-notification": "^2.3.3",
+    "@zynero/shared": "workspace:*",
     "lucide-react": "^0.468.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",

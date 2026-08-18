@@ -86,8 +86,8 @@ type NavItem = {
 
 const notifiedDownloads = new Set<string>();
 
-async function notifyIfNeeded(row: StoredDownload) {
-  if (!['completed', 'failed'].includes(row.status) || notifiedDownloads.has(row.id)) return;
+async function notifyIfNeeded(row: StoredDownload, enabled: boolean) {
+  if (!enabled || !['completed', 'failed'].includes(row.status) || notifiedDownloads.has(row.id)) return;
   notifiedDownloads.add(row.id);
   try {
     let permission = await isPermissionGranted();
@@ -187,7 +187,7 @@ function DownloadCard({ item, onAction }: { item: DownloadItem; onAction: (actio
 
 function AddDownloadModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (url: string, destination: string) => Promise<void> }) {
   const [url, setUrl] = useState("");
-  const [destination, setDestination] = useState("Downloads");
+  const [destination, setDestination] = useState("Auto");
   const [error, setError] = useState("");
   const [isSubmitting, setSubmitting] = useState(false);
   const submit = async () => {
@@ -211,7 +211,7 @@ function AddDownloadModal({ onClose, onSubmit }: { onClose: () => void; onSubmit
         <div className={`url-field ${error ? "url-field--error" : ""}`}><ExternalLink size={17} /><input id="download-url" autoFocus value={url} onChange={(event) => { setUrl(event.target.value); setError(""); }} placeholder="https://example.com/file.zip" onKeyDown={(event) => event.key === "Enter" && void submit()} /></div>
         {error && <p className="field-error">{error}</p>}
         <label className="field-label" htmlFor="destination">Save to</label>
-        <div className="select-field"><FolderOpen size={17} /><select id="destination" value={destination} onChange={(event) => setDestination(event.target.value)}><option>Downloads</option><option>Desktop</option><option>Documents</option></select><ChevronDown size={16} /></div>
+        <div className="select-field"><FolderOpen size={17} /><select id="destination" value={destination} onChange={(event) => setDestination(event.target.value)}><option value="Auto">Automatic by category</option><option value="Downloads">Downloads</option><option value="Desktop">Desktop</option><option value="Documents">Documents</option></select><ChevronDown size={16} /></div>
         <div className="modal__note"><ShieldCheck size={16} /><span>URL validation and file safety checks will run in the Rust engine.</span></div>
         <div className="modal__actions"><button className="button button--ghost" type="button" onClick={onClose} disabled={isSubmitting}>Cancel</button><button className="button button--primary" type="button" onClick={() => void submit()} disabled={isSubmitting}><ArrowDownToLine size={16} /> {isSubmitting ? "Validating…" : "Start download"}</button></div>
       </section>
@@ -219,22 +219,58 @@ function AddDownloadModal({ onClose, onSubmit }: { onClose: () => void; onSubmit
   );
 }
 
-function SettingsPanel({ theme, onTheme, onClose, onToast }: { theme: "midnight" | "graphite" | "dawn"; onTheme: (theme: "midnight" | "graphite" | "dawn") => void; onClose: () => void; onToast: (message: string) => void }) {
+function SettingsPanel({ theme, onTheme, notificationsEnabled, onNotifications, onClose, onToast }: { theme: "midnight" | "graphite" | "dawn"; onTheme: (theme: "midnight" | "graphite" | "dawn") => void; notificationsEnabled: boolean; onNotifications: (enabled: boolean) => void; onClose: () => void; onToast: (message: string) => void }) {
   const [maxConcurrent, setMaxConcurrent] = useState("3");
+  const [maxConnectionsPerDownload, setMaxConnectionsPerDownload] = useState("8");
   const [autoStart, setAutoStart] = useState(true);
+  const [startOnLaunch, setStartOnLaunch] = useState(false);
+  const [speedLimit, setSpeedLimit] = useState("0");
+  const [defaultDestination, setDefaultDestination] = useState("Downloads");
+  const [categoryRoutes, setCategoryRoutes] = useState<Record<string, string>>({
+    archives: "Downloads", audio: "Downloads", video: "Downloads", images: "Downloads", documents: "Documents", applications: "Downloads", other: "Downloads",
+  });
   const [saving, setSaving] = useState(false);
+  const routedCategories = ["archives", "audio", "video", "images", "documents", "applications", "other"];
+
+  useEffect(() => {
+    if (!("__TAURI_INTERNALS__" in window)) return;
+    const keys = ["max_concurrent_downloads", "max_connections_per_download", "auto_start_downloads", "start_on_launch", "global_speed_limit_bps", "default_destination", ...routedCategories.map((category) => `category_folder_${category}`)];
+    void Promise.all(keys.map((key) => invoke<string | null>("get_setting", { key }))).then((values) => {
+      const settings = Object.fromEntries(keys.map((key, index) => [key, values[index]]));
+      if (settings.max_concurrent_downloads) setMaxConcurrent(settings.max_concurrent_downloads);
+      if (settings.max_connections_per_download) setMaxConnectionsPerDownload(settings.max_connections_per_download);
+      if (settings.auto_start_downloads) setAutoStart(settings.auto_start_downloads !== "false");
+      if (settings.start_on_launch) setStartOnLaunch(settings.start_on_launch === "true");
+      if (settings.global_speed_limit_bps) setSpeedLimit(settings.global_speed_limit_bps);
+      if (settings.default_destination) setDefaultDestination(settings.default_destination);
+      setCategoryRoutes(Object.fromEntries(routedCategories.map((category) => [category, settings[`category_folder_${category}`] ?? (category === "documents" ? "Documents" : "Downloads")] )));
+    }).catch(() => undefined);
+  }, []);
 
   const save = async () => {
     const parsed = Number(maxConcurrent);
+    const parsedSpeedLimit = Number(speedLimit);
     if (!Number.isInteger(parsed) || parsed < 1 || parsed > 32) {
       onToast("Concurrent downloads must be between 1 and 32.");
+      return;
+    }
+    if (!Number.isSafeInteger(parsedSpeedLimit) || parsedSpeedLimit < 0 || parsedSpeedLimit > 1_000_000_000) {
+      onToast("Speed limit must be 0 (unlimited) or between 1 and 1,000,000,000 B/s.");
+      return;
+    }
+    const parsedConnections = Number(maxConnectionsPerDownload);
+    if (!Number.isInteger(parsedConnections) || parsedConnections < 1 || parsedConnections > 32) {
+      onToast("Connections per download must be between 1 and 32.");
       return;
     }
     setSaving(true);
     try {
       if ("__TAURI_INTERNALS__" in window) {
-        await invoke("set_setting", { key: "max_concurrent_downloads", value: String(parsed) });
-        await invoke("set_setting", { key: "auto_start_downloads", value: String(autoStart) });
+        const settings = {
+          max_concurrent_downloads: String(parsed), max_connections_per_download: String(parsedConnections), auto_start_downloads: String(autoStart), start_on_launch: String(startOnLaunch), global_speed_limit_bps: String(parsedSpeedLimit), notifications_enabled: String(notificationsEnabled), default_destination: defaultDestination,
+          ...Object.fromEntries(routedCategories.map((category) => [`category_folder_${category}`, categoryRoutes[category]])),
+        };
+        for (const [key, value] of Object.entries(settings)) await invoke("set_setting", { key, value });
       }
       onToast("Settings saved.");
       onClose();
@@ -249,7 +285,13 @@ function SettingsPanel({ theme, onTheme, onClose, onToast }: { theme: "midnight"
     <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <section className="modal settings-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title">
         <div className="modal__header"><div><div className="section-kicker">WORKSPACE CONFIGURATION</div><h2 id="settings-title">Settings</h2></div><button className="icon-button" type="button" onClick={onClose} aria-label="Close settings"><X size={19} /></button></div>
-        <div className="settings-section"><div className="settings-section__heading"><Settings size={16} /><div><strong>Downloads</strong><small>Control the local transfer engine.</small></div></div><label className="field-label" htmlFor="max-concurrent">Maximum concurrent downloads</label><input className="settings-input" id="max-concurrent" type="number" min="1" max="32" value={maxConcurrent} onChange={(event) => setMaxConcurrent(event.target.value)} /><label className="settings-toggle"><input type="checkbox" checked={autoStart} onChange={(event) => setAutoStart(event.target.checked)} /><span>Start queued downloads automatically</span></label></div>
+        <div className="settings-section"><div className="settings-section__heading"><FolderOpen size={16} /><div><strong>General</strong><small>Choose where new downloads are routed by default.</small></div></div><label className="field-label" htmlFor="default-destination">Default destination</label><select className="settings-input" id="default-destination" value={defaultDestination} onChange={(event) => setDefaultDestination(event.target.value)}><option>Downloads</option><option>Desktop</option><option>Documents</option></select><label className="settings-toggle"><input type="checkbox" checked={startOnLaunch} onChange={(event) => setStartOnLaunch(event.target.checked)} /><span>Start ZYNERO with Windows</span></label></div>
+        <div className="settings-section"><div className="settings-section__heading"><Gauge size={16} /><div><strong>Connections</strong><small>Control concurrency without changing the real worker.</small></div></div><label className="field-label" htmlFor="max-connections">Maximum connections per download</label><input className="settings-input" id="max-connections" type="number" min="1" max="32" value={maxConnectionsPerDownload} onChange={(event) => setMaxConnectionsPerDownload(event.target.value)} /><small className="settings-help">Used by segmented downloads when the server supports byte ranges.</small></div>
+        <div className="settings-section"><div className="settings-section__heading"><FolderOpen size={16} /><div><strong>Category routing</strong><small>Each file type can use its own Windows known folder.</small></div></div><div className="category-routing-grid">{routedCategories.map((category) => <label className="field-label" key={category}>{categoryLabels[category]}<select className="settings-input" value={categoryRoutes[category]} onChange={(event) => setCategoryRoutes((current) => ({ ...current, [category]: event.target.value }))}><option>Downloads</option><option>Desktop</option><option>Documents</option></select></label>)}</div><small className="settings-help">Choose Auto in Add download to apply these rules.</small></div>
+        <div className="settings-section"><div className="settings-section__heading"><ShieldCheck size={16} /><div><strong>Privacy</strong><small>Local-only behavior and optional alerts.</small></div></div><small className="settings-help">ZYNERO stores download metadata locally in SQLite. No download URLs are sent to a remote service.</small></div>
+        <div className="settings-section"><div className="settings-section__heading"><Settings size={16} /><div><strong>Advanced</strong><small>Low-level transfer defaults.</small></div></div><small className="settings-help">Settings are validated in Rust and persisted before they affect future queue runs.</small></div>
+        <div className="settings-section settings-section--notifications" role="group" aria-labelledby="notifications-heading"><div className="settings-section__heading"><ShieldCheck size={16} /><div><strong id="notifications-heading">Notifications</strong><small>Control completion and failure alerts.</small></div><span className={`settings-status ${notificationsEnabled ? "settings-status--on" : "settings-status--off"}`}>{notificationsEnabled ? "ON" : "OFF"}</span></div><label className="settings-toggle"><input aria-label="Enable download notifications" type="checkbox" checked={notificationsEnabled} onChange={(event) => onNotifications(event.target.checked)} /><span>Notify when downloads complete or fail</span></label><small className="settings-help">This setting is saved with the other workspace settings.</small></div>
+        <div className="settings-section"><div className="settings-section__heading"><Settings size={16} /><div><strong>Downloads</strong><small>Control the local transfer engine.</small></div></div><label className="field-label" htmlFor="max-concurrent">Maximum concurrent downloads</label><input className="settings-input" id="max-concurrent" type="number" min="1" max="32" value={maxConcurrent} onChange={(event) => setMaxConcurrent(event.target.value)} /><label className="field-label" htmlFor="speed-limit">Global speed limit (B/s)</label><input className="settings-input" id="speed-limit" type="number" min="0" max="1000000000" value={speedLimit} onChange={(event) => setSpeedLimit(event.target.value)} /><small className="settings-help">Use 0 for unlimited. The limit is shared across all active segment workers.</small><label className="settings-toggle"><input type="checkbox" checked={autoStart} onChange={(event) => setAutoStart(event.target.checked)} /><span>Start queued downloads automatically</span></label></div>
         <div className="settings-section"><div className="settings-section__heading"><Palette size={16} /><div><strong>Appearance</strong><small>Choose a persistent workspace theme.</small></div></div><div className="theme-options">{(["midnight", "graphite", "dawn"] as const).map((option) => <button key={option} type="button" className={`theme-option ${theme === option ? "theme-option--active" : ""}`} onClick={() => onTheme(option)}><span className={`theme-option__swatch theme-option__swatch--${option}`} /><span>{option[0].toUpperCase() + option.slice(1)}</span></button>)}</div></div>
         <div className="modal__actions"><button className="button button--ghost" type="button" onClick={onClose} disabled={saving}>Cancel</button><button className="button button--primary" type="button" onClick={() => void save()} disabled={saving}>{saving ? "Saving…" : "Save settings"}</button></div>
       </section>
@@ -270,9 +312,11 @@ function App() {
   const [downloads, setDownloads] = useState<DownloadItem[]>([]);
   const [toast, setToast] = useState("");
   const [isSettingsOpen, setSettingsOpen] = useState(false);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
 
   useEffect(() => {
     if (!("__TAURI_INTERNALS__" in window)) return;
+    void invoke<string | null>("get_setting", { key: "notifications_enabled" }).then((value) => setNotificationsEnabled(value !== "false")).catch(() => undefined);
     void invoke<StoredDownload[]>("get_downloads")
       .then((rows) => setDownloads(rows.map((row) => ({ id: row.id, name: row.filename, url: row.url, size: row.totalBytes ?? 0, downloaded: row.downloadedBytes, speed: row.speedBps ?? 0, etaSeconds: row.etaSeconds ?? 0, status: row.status === "active" ? "active" : row.status === "completed" ? "completed" : row.status === "failed" ? "failed" : row.status === "paused" ? "paused" : row.status === "cancelled" ? "cancelled" : "queued", connections: 1, destination: row.destination, category: row.category ?? "other" }))))
       .catch(() => setToast("Could not load downloads from SQLite."));
@@ -290,14 +334,14 @@ function App() {
     let unlisten: (() => void) | undefined;
     void listen<StoredDownload>("download-progress", (event) => {
       const row = event.payload;
-      void notifyIfNeeded(row);
+      void notifyIfNeeded(row, notificationsEnabled);
       setDownloads((current) => {
         const next = { id: row.id, name: row.filename, url: row.url, size: row.totalBytes ?? 0, downloaded: row.downloadedBytes, speed: row.speedBps ?? 0, etaSeconds: row.etaSeconds ?? 0, status: row.status === "active" ? "active" : row.status === "completed" ? "completed" : row.status === "failed" ? "failed" : row.status === "paused" ? "paused" : row.status === "cancelled" ? "cancelled" : "queued", connections: 1, destination: row.destination, category: row.category ?? "other" } as DownloadItem;
         return current.some((item) => item.id === row.id) ? current.map((item) => item.id === row.id ? next : item) : [next, ...current];
       });
     }).then((remove) => { unlisten = remove; });
     return () => { unlisten?.(); };
-  }, []);
+  }, [notificationsEnabled]);
 
   useEffect(() => { window.localStorage.setItem("zynero-theme", theme); }, [theme]);
 
@@ -358,7 +402,7 @@ function App() {
       </section>
       {toast && <div className="toast"><Check size={16} />{toast}<button type="button" onClick={() => setToast("")} aria-label="Dismiss notification"><X size={14} /></button></div>}
       {isModalOpen && <AddDownloadModal onClose={() => setModalOpen(false)} onSubmit={handleSubmit} />}
-      {isSettingsOpen && <SettingsPanel theme={theme} onTheme={setTheme} onClose={() => setSettingsOpen(false)} onToast={(message) => { setToast(message); window.setTimeout(() => setToast(""), 4200); }} />}
+      {isSettingsOpen && <SettingsPanel theme={theme} onTheme={setTheme} notificationsEnabled={notificationsEnabled} onNotifications={setNotificationsEnabled} onClose={() => setSettingsOpen(false)} onToast={(message) => { setToast(message); window.setTimeout(() => setToast(""), 4200); }} />}
     </main>
   );
 }
