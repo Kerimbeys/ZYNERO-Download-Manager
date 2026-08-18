@@ -1,4 +1,5 @@
 mod browser;
+#[cfg(not(test))]
 mod commands;
 mod database;
 mod domain;
@@ -9,10 +10,12 @@ mod utils;
 
 use std::time::Duration;
 
+#[cfg(not(test))]
 use tauri::Manager;
 
 use crate::scheduler::{evaluate_window, ScheduleDecision};
 
+#[cfg(not(test))]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
