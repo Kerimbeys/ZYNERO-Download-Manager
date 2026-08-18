@@ -136,3 +136,10 @@
 - [ ] F03 — Windows completion/failure/queue notification'larını optional ayarlarla tamamla.
 - [ ] F04 — General, Downloads, Connections, Notifications, Appearance, Privacy ve Advanced ayarlarının kalan IPC akışlarını tamamla.
 - [ ] F05 — Kategori filtreleme sonrası kategori bazlı klasör routing ve UI görünürlüğünü tamamla.
+
+## UI önizleme doğrulaması
+
+- [x] Windows Tauri masaüstü UI'sını güncel kaynaklarla çalıştır.
+- [x] Dashboard ekranının güncel görüntüsünü yakala veya çalıştırma engelini kaydet. `createRoot(...).render(<App />)` mount eksikliği giderildi; gerçek ZYNERO dashboard görüntüsü Windows üzerinde yakalandı.
+- [x] Kullanıcıya masaüstü UI önizlemesini ve doğrulama sonucunu göster.
+- [x] UI-BOOT — Tauri WebView boş ekran nedenini teşhis et ve düzelt. Eksik React root mount çağrısı eklendi; `pnpm --dir apps/desktop typecheck`, production build ve Tauri dev runtime başarılı.

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { createRoot } from "react-dom/client";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
@@ -362,3 +363,7 @@ function App() {
 }
 
 export default App;
+
+const rootElement = document.getElementById("root");
+if (!rootElement) throw new Error("ZYNERO root element was not found.");
+createRoot(rootElement).render(<App />);
