@@ -162,7 +162,7 @@
 
 ## C10/C11 doğrulama oturumu
 
-- [ ] C10 — Windows local HTTP integration test runner’ını ve entrypoint sorununu düzelt.
-- [ ] C10 — HTTP, pause/resume, restart recovery ve failure senaryolarını gerçek testlerle çalıştır.
-- [ ] C11 — Resumable download uçtan uca milestone’unu doğrula.
-- [ ] C11 — TODO evidence kaydını, cohesive commit’i ve GitHub main teslimini tamamla.
+- [x] C10 — Windows local HTTP integration test runner’ını ve entrypoint sorununu düzelt. `lib.rs` test koşulları ve download Tauri adaptörü ayrıştırıldı; Windows test binary artık çalışıyor.
+- [x] C10 — HTTP, pause/resume, restart recovery ve failure senaryolarını gerçek testlerle çalıştır. `cargo test --lib download::tests` 5/5 başarılı.
+- [x] C11 — Resumable download uçtan uca milestone’unu doğrula. Range offset, final byte-for-byte dosya ve SQLite `completed` durumu doğrulandı.
+- [x] C11 — TODO evidence kaydını, cohesive commit’i ve GitHub main teslimini tamamla. `e5e47a6` test evidence ve `a06dd2f` test isolation commit’leri `main` branch’ine pushlandı.
