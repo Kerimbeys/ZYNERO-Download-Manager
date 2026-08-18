@@ -10,7 +10,7 @@
 - [x] A02 — Tauri 2.x + React + TypeScript + Vite masaüstü iskeletini kur ve Windows hedefini doğrula. Rust 1.97.1, Tauri CLI 2.11.4, MSVC Build Tools ve WebView2 hazır; Tauri dev/release derleme doğrulandı.
 - [x] A03 — Rust modül sınırlarını oluştur: `commands`, `download`, `database`, `scheduler`, `browser`, `security`, `utils`. Modül iskeletleri ve `lib.rs` bağlantıları eklendi.
 - [x] A04 — Ortak domain tiplerini tanımla: `DownloadStatus`, `Download`, `Segment`, progress payload ve IPC hata modeli. `packages/shared/src/index.ts` TypeScript IPC sözleşmesi ve `apps/desktop/src-tauri/src/domain.rs` serde uyumlu Rust modelleri eklendi; desktop workspace bağımlılığı bağlandı.
-- [ ] A05 — Güvenli Tauri capability/permission politikasını ve minimal IPC yüzeyini tanımla.
+- [x] A05 — Güvenli Tauri capability/permission politikasını ve minimal IPC yüzeyini tanımla. `core:default` kaldırıldı; yalnızca `core:event:default` ve notification için `is-permission-granted`, `request-permission`, `show` izinleri bırakıldı. Custom IPC command'lar yalnızca Rust handler üzerinden erişilebilir.
 - [ ] A06 — `README.md`, `ARCHITECTURE.md`, `SECURITY.md`, `CONTRIBUTING.md` ve `CHANGELOG.md` başlangıç belgelerini yaz.
 - [-] A07 — Format, lint, typecheck, Rust check/test ve build komutlarını çalışır hâle getir. Frontend typecheck/build ve `cargo check` çalışıyor; format/lint/test komutları sonraki adım.
 
@@ -150,3 +150,12 @@
 - [x] Seçilen görev için gerçek backend/IPC/UI dikey dilimini uygula. Shared TypeScript sözleşmesi, Rust serde modelleri ve frontend DownloadStatus bağlantısı eklendi.
 - [x] Windows Rust, frontend typecheck/build ve ilgili testleri çalıştır. `pnpm install`, desktop typecheck, `cargo fmt --check`, `cargo check` ve production build başarılı; yalnızca mevcut/uygulanmamış domain kullanımına ait dead-code uyarıları kaldı.
 - [x] Doğrulama sonrası bu oturumun görev durumunu ve commit kapsamını güncelle. A04 değişiklikleri cohesive commit için hazırlandı.
+
+## A05 → Windows release teslim planı
+
+- [x] A05 güvenlik kapsamını mevcut Tauri capability ve IPC command listesiyle karşılaştır.
+- [x] Minimal capability/permission politikasını uygula ve gereksiz izinleri kaldır.
+- [x] Kritik ürün akışlarının mevcut gerçek backend bağlantısını doğrula; mock veya sahte ilerleme eklenmedi.
+- [x] Windows smoke testini çalıştır; release `zynero.exe` gerçek pencereyi `ZYNERO` başlığıyla açtı ve process yanıt veriyor.
+- [x] Windows installer/`.exe` paketini oluştur. NSIS ve MSI çıktıları üretildi.
+- [-] Release notlarını, checksum bilgisini ve kullanım talimatlarını ekle. `RELEASE_NOTES_v0.1.0.md` hazırlandı ve NSIS installer SHA-256 doğrulandı; GitHub release asset yüklemesi sonraki teslim adımı.
