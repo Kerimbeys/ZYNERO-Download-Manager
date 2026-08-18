@@ -1,6 +1,7 @@
 mod browser;
 mod commands;
 mod database;
+mod domain;
 mod download;
 mod scheduler;
 mod security;

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
+import type { DownloadStatus as SharedDownloadStatus } from "@zynero/shared";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
@@ -31,7 +32,7 @@ import {
 } from "lucide-react";
 import "./styles.css";
 
-type DownloadStatus = "active" | "queued" | "paused" | "completed" | "failed" | "cancelled";
+type DownloadStatus = SharedDownloadStatus;
 
 type DownloadItem = {
   id: string;

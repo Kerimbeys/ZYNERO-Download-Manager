@@ -9,7 +9,7 @@
 - [x] A01 — Repository çalışma alanını oluştur; `apps/desktop`, `apps/extension`, `packages/shared`, `packages/i18n`, `docs`, `scripts` ve `tests` dizinlerini ekle. Temel pnpm workspace ve React/Vite uygulama iskeleti oluşturuldu.
 - [x] A02 — Tauri 2.x + React + TypeScript + Vite masaüstü iskeletini kur ve Windows hedefini doğrula. Rust 1.97.1, Tauri CLI 2.11.4, MSVC Build Tools ve WebView2 hazır; Tauri dev/release derleme doğrulandı.
 - [x] A03 — Rust modül sınırlarını oluştur: `commands`, `download`, `database`, `scheduler`, `browser`, `security`, `utils`. Modül iskeletleri ve `lib.rs` bağlantıları eklendi.
-- [ ] A04 — Ortak domain tiplerini tanımla: `DownloadStatus`, `Download`, `Segment`, progress payload ve IPC hata modeli.
+- [x] A04 — Ortak domain tiplerini tanımla: `DownloadStatus`, `Download`, `Segment`, progress payload ve IPC hata modeli. `packages/shared/src/index.ts` TypeScript IPC sözleşmesi ve `apps/desktop/src-tauri/src/domain.rs` serde uyumlu Rust modelleri eklendi; desktop workspace bağımlılığı bağlandı.
 - [ ] A05 — Güvenli Tauri capability/permission politikasını ve minimal IPC yüzeyini tanımla.
 - [ ] A06 — `README.md`, `ARCHITECTURE.md`, `SECURITY.md`, `CONTRIBUTING.md` ve `CHANGELOG.md` başlangıç belgelerini yaz.
 - [-] A07 — Format, lint, typecheck, Rust check/test ve build komutlarını çalışır hâle getir. Frontend typecheck/build ve `cargo check` çalışıyor; format/lint/test komutları sonraki adım.
@@ -143,3 +143,10 @@
 - [x] Dashboard ekranının güncel görüntüsünü yakala veya çalıştırma engelini kaydet. `createRoot(...).render(<App />)` mount eksikliği giderildi; gerçek ZYNERO dashboard görüntüsü Windows üzerinde yakalandı.
 - [x] Kullanıcıya masaüstü UI önizlemesini ve doğrulama sonucunu göster.
 - [x] UI-BOOT — Tauri WebView boş ekran nedenini teşhis et ve düzelt. Eksik React root mount çağrısı eklendi; `pnpm --dir apps/desktop typecheck`, production build ve Tauri dev runtime başarılı.
+
+## Devam oturumu — sonraki açık görev
+
+- [x] Sıradaki açık görevi mevcut TODO sırasına göre belirle ve kapsamını doğrula. Seçilen görev: A04.
+- [x] Seçilen görev için gerçek backend/IPC/UI dikey dilimini uygula. Shared TypeScript sözleşmesi, Rust serde modelleri ve frontend DownloadStatus bağlantısı eklendi.
+- [x] Windows Rust, frontend typecheck/build ve ilgili testleri çalıştır. `pnpm install`, desktop typecheck, `cargo fmt --check`, `cargo check` ve production build başarılı; yalnızca mevcut/uygulanmamış domain kullanımına ait dead-code uyarıları kaldı.
+- [x] Doğrulama sonrası bu oturumun görev durumunu ve commit kapsamını güncelle. A04 değişiklikleri cohesive commit için hazırlandı.

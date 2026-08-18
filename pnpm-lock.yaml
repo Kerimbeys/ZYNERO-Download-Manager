@@ -16,6 +16,9 @@ importers:
       '@tauri-apps/plugin-notification':
         specifier: ^2.3.3
         version: 2.3.3
+      '@zynero/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       lucide-react:
         specifier: ^0.468.0
         version: 0.468.0(react@19.2.8)
@@ -50,6 +53,8 @@ importers:
       vitest:
         specifier: ^2.1.8
         version: 2.1.9
+
+  packages/shared: {}
 
 packages:
 
