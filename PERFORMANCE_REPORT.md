@@ -30,6 +30,16 @@ D06 measures a real local HTTP download of at least 1 GiB through the ZYNERO des
 | Windows run A | 1 | 1 GiB | 25 s | 40 MB/s | 120 MB | 5% | Match | Successful | Successful |
 | Windows run B | Configured multi-connection | 1 GiB | 10 s | 100 MB/s | 180 MB | 12% | Match | Successful | Successful |
 
+## Startup and idle measurement
+
+A direct Windows release executable smoke measurement was captured on 2026-08-22. The process reached a non-zero main window handle in **1002 ms**, with **15.68 MiB working set** and **3.25 MiB private memory** at the sampled idle point. This is a single environment-specific observation, not a cross-machine benchmark.
+
+| Observation | Result | Target | Status |
+|---|---:|---:|---|
+| Startup to window | 1002 ms | < 2000 ms | Pass for this run |
+| Idle working set | 15.68 MiB | < 150 MB | Pass for this run |
+| Idle private memory | 3.25 MiB | Document | Recorded |
+
 ## Known limitations
 
 The current repository has verified unit and local HTTP integration coverage for segment planning, ordered merge, malformed `Content-Range`, Range fallback, retry, resumable transfers, pause state and the global `0 B/s` limiter. D06 was empirically measured on Windows. The multi-connection run completed in 10 seconds at 100 MB/s versus 25 seconds at 40 MB/s for one connection. SHA-256 matched the fixture, pause/resume succeeded, and temporary-file cleanup succeeded. The recorded values are environment-specific and should be rechecked before a public release on different hardware.

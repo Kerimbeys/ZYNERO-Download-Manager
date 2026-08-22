@@ -2,12 +2,10 @@ use crate::{
     database::{DatabaseState, QueueRecord, StoredDownload},
     download::DownloadManager,
     scheduler::{evaluate_window, ScheduleDecision},
+    security::sha256_file,
 };
 use reqwest::header::{ACCEPT_RANGES, CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE, RANGE};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
-use std::fs::File;
-use std::io::{BufReader, Read};
 use std::path::Path;
 use tauri::{command, State};
 use url::Url;
@@ -217,21 +215,7 @@ pub fn verify_download_hash(
     let path = download
         .final_path
         .ok_or_else(|| "Download has no finalized file".to_string())?;
-    let file =
-        File::open(&path).map_err(|error| format!("Could not open finalized file: {error}"))?;
-    let mut reader = BufReader::new(file);
-    let mut hasher = Sha256::new();
-    let mut buffer = [0_u8; 1024 * 1024];
-    loop {
-        let read = reader
-            .read(&mut buffer)
-            .map_err(|error| format!("Could not read finalized file: {error}"))?;
-        if read == 0 {
-            break;
-        }
-        hasher.update(&buffer[..read]);
-    }
-    let actual = format!("{:x}", hasher.finalize());
+    let actual = sha256_file(Path::new(&path))?;
     Ok(actual == expected)
 }
 

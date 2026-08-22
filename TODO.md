@@ -47,6 +47,9 @@
 
 ## E. React masaüstü arayüzü
 
+| 2026-08-22 | E08 UI DOM test slice | Kısmi | `@testing-library/react`, `@testing-library/jest-dom`, `@testing-library/user-event`, `jsdom` eklendi; `App` test export'u ve root guard düzeltildi; `pnpm --dir apps/desktop typecheck`, `pnpm --dir apps/desktop build` ve `pnpm --dir apps/desktop test -- --maxWorkers=1 --minWorkers=1` başarılı, 1 dosya/3 test geçti. Gerçek Tauri WebView ve temiz Windows paket smoke testi kalan risk. |
+
+
 - [x] E01 — Windows 11 esintili responsive shell ve sidebar oluştur. Responsive sidebar, workspace navigasyonu, storage kartı ve temel uygulama shell'i eklendi.
 - [x] E02 — Dashboard'u yalnızca gerçek Rust/SQLite verileriyle besle. Uygulama açılışında `get_downloads` IPC çağrısı ile persisted kayıtlar yükleniyor; mock download kullanılmıyor.
 - [x] E03 — Download card: progress, bytes, speed, ETA, connection count, status ve eylemler. Backend tipine hazır DownloadCard bileşeni ve durum görselleri eklendi.
@@ -54,7 +57,11 @@
 - [x] E05 — Active, Completed, Queued, Scheduled, Failed ve History görünümlerini ekle. Navigation artık gerçek status filtreleri ve arama eşleşmesi uyguluyor; Scheduled görünümü scheduler verisi bekliyor.
 - [x] E06 — Pause/resume/cancel/delete/open file/open folder eylemlerini IPC'ye bağla. Tüm temel download lifecycle ve Windows Explorer file/folder command'ları frontend'e bağlandı.
 - [x] E07 — Light/dark/system tema desteğini ekle; aşırı gradient/glass kullanımından kaçın. Midnight/Graphite/Dawn token varyantları, system preference başlangıcı ve localStorage kalıcılığı eklendi.
-- [ ] E08 — UI testleri: add, pause, resume, delete ve settings.
+- [-] E08 — UI testleri: add, pause, resume, delete ve settings. Vitest/jsdom + React Testing Library kuruldu; kritik DOM testleri 3/3 başarılı. Gerçek Tauri WebView/Windows paket smoke kapsamı ayrıca bekliyor.
+  - [x] E08-01 — Frontend test runner ve DOM test ortamını stabil biçimde yapılandır. `vite.config.ts`, jsdom setup ve `src/test/main.test.tsx` eklendi.
+  - [x] E08-02 — Add Download / Auto destination request testini ekle. `add_download` IPC isteği ve `destination: Auto` doğrulandı.
+  - [x] E08-03 — Pause, resume ve delete IPC çağrılarını test et. Üç lifecycle çağrısı DOM üzerinden doğrulandı.
+  - [x] E08-04 — Settings notification toggle ve persistence testini ekle. Persisted OFF state ve `set_setting` çağrısı doğrulandı.
 
 ## F. Kuyruk, bildirim ve ayarlar
 
@@ -66,12 +73,19 @@
 
 ## G. Güvenlik ve ürünleştirme
 
+| 2026-08-22 | G03/G04 security slice | Kısmi | `security::redact_sensitive_text` ile URL credential, secret query, Authorization, Cookie ve X-Api-Key maskelenmesi; `sha256_file` ile 1 MiB buffer üzerinden hash hesaplama ve 4 security unit testi eklendi. Mevcut `verify_download_hash` command'ı ortak helper'a bağlandı. Windows `cargo fmt --check`, `cargo check` ve tam `cargo test --lib` sonucu 19/19 başarılı. G03 log sink entegrasyonu, G04 command fixture/UI mismatch akışı ve G05 installer doğrulaması kaldı. |
+
+
 - [ ] G01 — HTTPS doğrulaması, safe URL parsing ve secrets redaction denetimi.
 - [ ] G02 — Tauri permissions, IPC input validation ve filesystem root kısıtlarını gözden geçir.
-- [ ] G03 — DEBUG/INFO/WARN/ERROR lokal loglama; token/cookie/auth header loglamama.
-- [ ] G04 — SHA-256 hash verification ekle.
-- [ ] G05 — Installer, Windows code signing ve signed update altyapısını planla/uygula.
-- [ ] G06 — Startup <2 saniye, idle RAM <150 MB ve büyük dosya performans hedeflerini ölç.
+- [-] G03 — DEBUG/INFO/WARN/ERROR lokal loglama; token/cookie/auth header loglamama. `security::redact_sensitive_text` URL credential, secret query, Authorization, Cookie ve X-Api-Key değerlerini maskeleyerek 3 unit test ile doğrulandı; log sink'e merkezi bağlama ve kapsamlı log audit'i kaldı.
+  - [x] G03-01 — Merkezi secret-redaction yardımcılarını ve unit testlerini ekle. `cargo test --lib security::tests` sonucu 3/3 başarılı.
+- [-] G04 — SHA-256 hash verification ekle. `verify_download_hash` Tauri command'ı 64-hex expected digest, completed state ve persisted final path doğrulamasıyla mevcut; gerçek tamamlanmış dosya IPC smoke ve mismatch UI gösterimi kaldı.
+  - [-] G04-01 — Tamamlanmış dosya için Rust SHA-256 doğrulama akışını ve mismatch state'ini ekle. 1 GiB Windows ölçümünde SHA-256 eşleşti; command-level fixture test ve kullanıcıya görünür mismatch state'i sonraki dilim.
+- [-] G05 — Installer, Windows code signing ve signed update altyapısını planla/uygula. NSIS/MSI ve raw EXE release artifact'ları mevcut; checksum ve signing/update sınırlamaları `RELEASE_NOTES_v0.1.0.md` içinde belgelendi. Kod signing, signed updater ve temiz makine install/upgrade gate'leri kaldı.
+  - [-] G05-01 — Installer checksum, signing ve signed update planını belgeleyip doğrula. `ZYNERO_0.1.0_x64-setup.exe` SHA-256 `045EF0...70A60E`, MSI SHA-256 `9F7FCE...0995B`, raw EXE SHA-256 `4DE799...8D267`; checksum gerçek artifact'lar üzerinden hesaplandı, imzalama henüz yok.
+- [x] G06 — Startup <2 saniye, idle RAM <150 MB ve büyük dosya performans hedeflerini ölç. `PERFORMANCE_REPORT.md` içinde gerçek Windows 1 GiB download ölçümleri ile release executable startup/idle ölçümü toplandı; farklı donanımlarda yeniden doğrulama önerilir.
+  - [x] G06-01 — Startup, idle RAM ve büyük dosya ölçüm kanıtlarını tek raporda toplulaştır. `zynero.exe` için 2026-08-22 smoke: pencere hazır olma 1002 ms, working set 15.68 MiB, private memory 3.25 MiB; 1 GiB run A/B sonuçları raporda mevcut.
 
 ## H. Tarayıcı ve uluslararasılaştırma
 
@@ -83,6 +97,9 @@
 - [ ] H06 — Browser interception deneysel özelliğini uçtan uca test et.
 
 ## I. Release hazırlığı
+
+| 2026-08-22 | G05/G06 release and performance evidence | Kısmi | Mevcut `zynero.exe`, NSIS ve MSI artifact'ları Windows release klasöründe doğrulandı; üç dosyanın SHA-256 değerleri hesaplandı ve `RELEASE_NOTES_v0.1.0.md` güncellendi. Release executable startup 1002 ms ve idle working set 15.68 MiB olarak ölçüldü; 1 GiB multi-connection sonuçları raporda mevcut. Kod signing, signed update ve temiz Windows 10/11 install/upgrade smoke testleri kalan release gate'leri. |
+
 
 - [ ] I01 — Full unit/integration/UI test matrisi ve CI çalıştırması.
 - [ ] I02 — Security review ve threat model dokümanını tamamla.

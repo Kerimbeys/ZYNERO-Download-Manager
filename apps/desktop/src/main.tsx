@@ -299,7 +299,7 @@ function SettingsPanel({ theme, onTheme, notificationsEnabled, onNotifications, 
   );
 }
 
-function App() {
+export function App() {
   const [activeNav, setActiveNav] = useState("Downloads");
   const [theme, setTheme] = useState<"midnight" | "graphite" | "dawn">(() => {
     const saved = window.localStorage.getItem("zynero-theme");
@@ -410,5 +410,4 @@ function App() {
 export default App;
 
 const rootElement = document.getElementById("root");
-if (!rootElement) throw new Error("ZYNERO root element was not found.");
-createRoot(rootElement).render(<App />);
+if (rootElement) createRoot(rootElement).render(<App />);
