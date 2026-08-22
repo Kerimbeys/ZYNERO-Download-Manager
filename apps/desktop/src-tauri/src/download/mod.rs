@@ -575,7 +575,12 @@ impl DownloadManager {
                 .send()
                 .await
             {
-                Ok(response) if response.status().as_u16() == 206 => return Ok(response),
+                Ok(response) if response.status().as_u16() == 206 => {
+                    if is_web_page_response(&response) {
+                        return Err("Remote URL returned a web page instead of a downloadable file".to_string());
+                    }
+                    return Ok(response);
+                }
                 Ok(response)
                     if (response.status().as_u16() == 408
                         || response.status().as_u16() == 429
@@ -608,6 +613,9 @@ impl DownloadManager {
                 Ok(response)
                     if response.status().is_success() || response.status().as_u16() == 206 =>
                 {
+                    if is_web_page_response(&response) {
+                        return Err("Remote URL returned a web page instead of a downloadable file".to_string());
+                    }
                     return Ok(response)
                 }
                 Ok(response)
@@ -630,6 +638,21 @@ impl DownloadManager {
         }
         Err("Download request exhausted retry attempts".to_string())
     }
+}
+
+fn is_web_page_content_type(value: &str) -> bool {
+    matches!(
+        value.split(';').next().map(str::trim),
+        Some("text/html") | Some("application/xhtml+xml")
+    )
+}
+
+fn is_web_page_response(response: &reqwest::Response) -> bool {
+    response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(is_web_page_content_type)
 }
 
 fn resolve_paths(download: &StoredDownload) -> Result<(PathBuf, PathBuf), String> {
@@ -676,6 +699,14 @@ fn _is_safe_path(path: &Path) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn rejects_web_page_content_types_but_allows_media_types() {
+        assert!(is_web_page_content_type("text/html; charset=utf-8"));
+        assert!(is_web_page_content_type("application/xhtml+xml"));
+        assert!(!is_web_page_content_type("video/mp4"));
+        assert!(!is_web_page_content_type("application/octet-stream"));
+    }
+
     use super::*;
     use crate::database::DatabaseState;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};

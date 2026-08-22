@@ -71,17 +71,32 @@
 - [-] F04 — General, Downloads, Connections, Notifications, Appearance, Privacy ve Advanced ayarlarını bağla. Downloads max concurrent/auto-start/speed limit ve Notifications setting gerçek IPC ile bağlı; Appearance tema seçenekleri bağlı; General, Connections, Privacy ve Advanced bölümleri bekliyor.
 - [-] F05 — Dosya kategorileri ve extension mapping'i ekle. Rust `get_file_category` IPC ve URL filename tabanlı archive/audio/video/images/documents/applications/other mapping eklendi; kategori bazlı UI/klasör routing sonraki adım.
 
+## Windows release v0.1.1
+
+- [ ] REL-01 — YouTube HTML response koruması dahil güncel kaynak için Windows fmt/check/test doğrulamasını tamamla.
+- [ ] REL-02 — Yeni NSIS/MSI/EXE artifact'larını temiz build ile üret.
+- [ ] REL-03 — Installer smoke, artifact boyutları ve SHA-256 checksum'larını doğrula.
+- [ ] REL-04 — GitHub `v0.1.1` release oluştur, artifact'ları ve release notes'u yükle, tag/commit durumunu doğrula.
+
+## YouTube indirme teşhisi
+
+- [-] YT-01 — YouTube URL'sinde 1 KB dosya arızasının response/redirect/metadata kök nedenini doğrula. Watch URL'si medya stream'i değil HTML/player/consent sayfası döndürüyor; mevcut akış başarılı 2xx gövdesini doğrudan dosyaya yazdığı için yaklaşık 1 KB HTML artifact oluşuyor.
+- [-] YT-02 — HTML consent/error/player response'unun medya dosyası gibi kaydedilmesini engelle. Metadata ve worker katmanına `text/html`/`application/xhtml+xml` response reddi eklendi; Windows terminali kapandığı için son cargo doğrulaması bekliyor.
+- [ ] YT-03 — Desteklenmeyen provider akışında kullanıcıya açık hata göster ve regression testi ekle. Backend hata mesajı hazır; UI toast ve Windows test kanıtı sonraki adım.
+
 ## G. Güvenlik ve ürünleştirme
 
-| 2026-08-22 | G03/G04 security slice | Kısmi | `security::redact_sensitive_text` ile URL credential, secret query, Authorization, Cookie ve X-Api-Key maskelenmesi; `sha256_file` ile 1 MiB buffer üzerinden hash hesaplama ve 4 security unit testi eklendi. Mevcut `verify_download_hash` command'ı ortak helper'a bağlandı. Windows `cargo fmt --check`, `cargo check` ve tam `cargo test --lib` sonucu 19/19 başarılı. G03 log sink entegrasyonu, G04 command fixture/UI mismatch akışı ve G05 installer doğrulaması kaldı. |
+| 2026-08-22 | G03/G04 security slice | Kısmi | `security::redact_sensitive_text` ile URL credential, secret query, Authorization, Cookie ve X-Api-Key maskelenmesi; merkezi logger formatter entegrasyonu; `sha256_file` ile 1 MiB buffer üzerinden hash hesaplama ve security unit testleri eklendi. `verify_download_hash` ortak helper'a bağlı; completed card success/mismatch UI ve invoke mock testleri tamamlandı. Windows security testleri 5/5, E08 UI paketi 5/5, frontend typecheck ve production build başarılı. Gerçek completed-file IPC smoke, kalıcı verification sonucu ve G05 installer doğrulaması kaldı. |
 
 
 - [ ] G01 — HTTPS doğrulaması, safe URL parsing ve secrets redaction denetimi.
 - [ ] G02 — Tauri permissions, IPC input validation ve filesystem root kısıtlarını gözden geçir.
-- [-] G03 — DEBUG/INFO/WARN/ERROR lokal loglama; token/cookie/auth header loglamama. `security::redact_sensitive_text` URL credential, secret query, Authorization, Cookie ve X-Api-Key değerlerini maskeleyerek 3 unit test ile doğrulandı; log sink'e merkezi bağlama ve kapsamlı log audit'i kaldı.
+- [-] G03 — DEBUG/INFO/WARN/ERROR lokal loglama; token/cookie/auth header loglamama. `security::redact_sensitive_text` artık debug `tauri-plugin-log` formatter'ına merkezi olarak bağlı; URL credential, secret query, Authorization, Cookie ve X-Api-Key değerleri loglanmadan önce maskeleniyor. Release log audit'i ve production logging policy kontrolü kaldı.
   - [x] G03-01 — Merkezi secret-redaction yardımcılarını ve unit testlerini ekle. `cargo test --lib security::tests` sonucu 3/3 başarılı.
-- [-] G04 — SHA-256 hash verification ekle. `verify_download_hash` Tauri command'ı 64-hex expected digest, completed state ve persisted final path doğrulamasıyla mevcut; gerçek tamamlanmış dosya IPC smoke ve mismatch UI gösterimi kaldı.
+  - [x] G03-02 — Redaction helper'ını mevcut lokal log sink çağrılarına bağla ve token/cookie/header sızıntısı için log fixture testi ekle. Formatter entegrasyonu, gömülü URL log fixture testi ve security testleri 5/5 başarılı; `cargo fmt --check` başarılı.
+- [-] G04 — SHA-256 hash verification ekle. `verify_download_hash` Tauri command'ı 64-hex expected digest, completed state ve persisted final path doğrulamasıyla mevcut; tamamlanmış kartta success/mismatch görünümü ve invoke mock DOM testleri eklendi. Gerçek tamamlanmış dosya IPC smoke ve kalıcı verification sonucu hâlâ kapsam dışında.
   - [-] G04-01 — Tamamlanmış dosya için Rust SHA-256 doğrulama akışını ve mismatch state'ini ekle. 1 GiB Windows ölçümünde SHA-256 eşleşti; command-level fixture test ve kullanıcıya görünür mismatch state'i sonraki dilim.
+  - [x] G04-02 — Hash mismatch IPC sonucunu React UI'da görünür hata/başarı durumu olarak göster ve gerçek invoke mock testi ekle. Completed kartına SHA-256 input/Verify kontrolü, success ve mismatch status mesajları eklendi; E08 UI paketi 5/5 başarılı, frontend typecheck ve production build başarılı.
 - [-] G05 — Installer, Windows code signing ve signed update altyapısını planla/uygula. NSIS/MSI ve raw EXE release artifact'ları mevcut; checksum ve signing/update sınırlamaları `RELEASE_NOTES_v0.1.0.md` içinde belgelendi. Kod signing, signed updater ve temiz makine install/upgrade gate'leri kaldı.
   - [-] G05-01 — Installer checksum, signing ve signed update planını belgeleyip doğrula. `ZYNERO_0.1.0_x64-setup.exe` SHA-256 `045EF0...70A60E`, MSI SHA-256 `9F7FCE...0995B`, raw EXE SHA-256 `4DE799...8D267`; checksum gerçek artifact'lar üzerinden hesaplandı, imzalama henüz yok.
 - [x] G06 — Startup <2 saniye, idle RAM <150 MB ve büyük dosya performans hedeflerini ölç. `PERFORMANCE_REPORT.md` içinde gerçek Windows 1 GiB download ölçümleri ile release executable startup/idle ölçümü toplandı; farklı donanımlarda yeniden doğrulama önerilir.

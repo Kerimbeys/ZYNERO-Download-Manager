@@ -46,6 +46,7 @@ type DownloadItem = {
   connections: number;
   destination: string;
   category: string;
+  finalPath: string | null;
 };
 
 const categoryLabels: Record<string, string> = {
@@ -156,7 +157,11 @@ function EmptyDownloads({ onAdd }: { onAdd: () => void }) {
   );
 }
 
-function DownloadCard({ item, onAction }: { item: DownloadItem; onAction: (action: "pause" | "resume" | "cancel" | "delete" | "openFile" | "openFolder") => Promise<void> }) {
+function DownloadCard({ item, onAction, onVerify }: { item: DownloadItem; onAction: (action: "pause" | "resume" | "cancel" | "delete" | "openFile" | "openFolder") => Promise<void>; onVerify: (expectedSha256: string) => Promise<boolean> }) {
+  const [verificationOpen, setVerificationOpen] = useState(false);
+  const [expectedSha256, setExpectedSha256] = useState("");
+  const [verificationMessage, setVerificationMessage] = useState("");
+  const [verificationBusy, setVerificationBusy] = useState(false);
   const progress = item.size > 0 ? Math.min(100, Math.round((item.downloaded / item.size) * 100)) : 0;
   const isPaused = item.status === "queued" || item.status === "paused";
   const isFinished = item.status === "completed" || item.status === "cancelled";
@@ -171,6 +176,7 @@ function DownloadCard({ item, onAction }: { item: DownloadItem; onAction: (actio
           <span className="category-badge">{categoryLabels[item.category] ?? categoryLabels.other}</span>
         </div>
         {isFinished && <button className="icon-button" type="button" aria-label="Open download folder" onClick={() => void onAction("openFolder")}><FolderOpen size={17} /></button>}
+        {item.status === "completed" && <button className="icon-button" type="button" aria-label="Verify SHA-256" onClick={() => { setVerificationOpen((open) => !open); setVerificationMessage(""); }}><ShieldCheck size={17} /></button>}
         <button className="icon-button" type="button" aria-label="Delete download" onClick={() => void onAction("delete")}><Trash2 size={17} /></button>
       </div>
       <div className="download-card__progress-row"><span>{progress}%</span><span>{formatBytes(item.downloaded)} of {formatBytes(item.size)}</span></div>
@@ -181,6 +187,7 @@ function DownloadCard({ item, onAction }: { item: DownloadItem; onAction: (actio
         {!isFinished && <button className="icon-button icon-button--small" type="button" aria-label={isPaused ? "Resume download" : "Pause download"} onClick={() => void onAction(isPaused ? "resume" : "pause")}>{isPaused ? <Play size={15} /> : <Pause size={15} />}</button>}
         {!isFinished && !isPaused && <button className="icon-button icon-button--small" type="button" aria-label="Cancel download" onClick={() => void onAction("cancel")}><X size={15} /></button>}
       </div>
+      {verificationOpen && item.status === "completed" && <div className="verification-row"><label htmlFor={`hash-${item.id}`}>Expected SHA-256</label><input id={`hash-${item.id}`} value={expectedSha256} onChange={(event) => setExpectedSha256(event.target.value)} placeholder="64-character hexadecimal digest" /><button className="button button--ghost" type="button" disabled={verificationBusy || expectedSha256.trim().length !== 64} onClick={() => { setVerificationBusy(true); setVerificationMessage(""); void onVerify(expectedSha256).then((matches) => setVerificationMessage(matches ? "SHA-256 verified." : "SHA-256 mismatch.")).catch((error) => setVerificationMessage(error instanceof Error ? error.message : "Verification failed.")).finally(() => setVerificationBusy(false)); }}>{verificationBusy ? "Checking…" : "Verify"}</button>{verificationMessage && <span role="status">{verificationMessage}</span>}</div>}
     </article>
   );
 }
@@ -318,13 +325,13 @@ export function App() {
     if (!("__TAURI_INTERNALS__" in window)) return;
     void invoke<string | null>("get_setting", { key: "notifications_enabled" }).then((value) => setNotificationsEnabled(value !== "false")).catch(() => undefined);
     void invoke<StoredDownload[]>("get_downloads")
-      .then((rows) => setDownloads(rows.map((row) => ({ id: row.id, name: row.filename, url: row.url, size: row.totalBytes ?? 0, downloaded: row.downloadedBytes, speed: row.speedBps ?? 0, etaSeconds: row.etaSeconds ?? 0, status: row.status === "active" ? "active" : row.status === "completed" ? "completed" : row.status === "failed" ? "failed" : row.status === "paused" ? "paused" : row.status === "cancelled" ? "cancelled" : "queued", connections: 1, destination: row.destination, category: row.category ?? "other" }))))
+      .then((rows) => setDownloads(rows.map((row) => ({ id: row.id, name: row.filename, url: row.url, size: row.totalBytes ?? 0, downloaded: row.downloadedBytes, speed: row.speedBps ?? 0, etaSeconds: row.etaSeconds ?? 0, status: row.status === "active" ? "active" : row.status === "completed" ? "completed" : row.status === "failed" ? "failed" : row.status === "paused" ? "paused" : row.status === "cancelled" ? "cancelled" : "queued", connections: 1, destination: row.destination, category: row.category ?? "other", finalPath: row.finalPath }))))
       .catch(() => setToast("Could not load downloads from SQLite."));
   }, []);
 
   useEffect(() => {
     if (!("__TAURI_INTERNALS__" in window)) return;
-    const refresh = () => void invoke<StoredDownload[]>("get_downloads").then((rows) => setDownloads(rows.map((row) => ({ id: row.id, name: row.filename, url: row.url, size: row.totalBytes ?? 0, downloaded: row.downloadedBytes, speed: row.speedBps ?? 0, etaSeconds: row.etaSeconds ?? 0, status: row.status === "active" ? "active" : row.status === "completed" ? "completed" : row.status === "failed" ? "failed" : row.status === "paused" ? "paused" : row.status === "cancelled" ? "cancelled" : "queued", connections: 1, destination: row.destination, category: row.category ?? "other" }))));
+    const refresh = () => void invoke<StoredDownload[]>("get_downloads").then((rows) => setDownloads(rows.map((row) => ({ id: row.id, name: row.filename, url: row.url, size: row.totalBytes ?? 0, downloaded: row.downloadedBytes, speed: row.speedBps ?? 0, etaSeconds: row.etaSeconds ?? 0, status: row.status === "active" ? "active" : row.status === "completed" ? "completed" : row.status === "failed" ? "failed" : row.status === "paused" ? "paused" : row.status === "cancelled" ? "cancelled" : "queued", connections: 1, destination: row.destination, category: row.category ?? "other", finalPath: row.finalPath }))));
     const interval = window.setInterval(refresh, 1000);
     return () => window.clearInterval(interval);
   }, []);
@@ -336,7 +343,7 @@ export function App() {
       const row = event.payload;
       void notifyIfNeeded(row, notificationsEnabled);
       setDownloads((current) => {
-        const next = { id: row.id, name: row.filename, url: row.url, size: row.totalBytes ?? 0, downloaded: row.downloadedBytes, speed: row.speedBps ?? 0, etaSeconds: row.etaSeconds ?? 0, status: row.status === "active" ? "active" : row.status === "completed" ? "completed" : row.status === "failed" ? "failed" : row.status === "paused" ? "paused" : row.status === "cancelled" ? "cancelled" : "queued", connections: 1, destination: row.destination, category: row.category ?? "other" } as DownloadItem;
+        const next = { id: row.id, name: row.filename, url: row.url, size: row.totalBytes ?? 0, downloaded: row.downloadedBytes, speed: row.speedBps ?? 0, etaSeconds: row.etaSeconds ?? 0, status: row.status === "active" ? "active" : row.status === "completed" ? "completed" : row.status === "failed" ? "failed" : row.status === "paused" ? "paused" : row.status === "cancelled" ? "cancelled" : "queued", connections: 1, destination: row.destination, category: row.category ?? "other", finalPath: row.finalPath } as DownloadItem;
         return current.some((item) => item.id === row.id) ? current.map((item) => item.id === row.id ? next : item) : [next, ...current];
       });
     }).then((remove) => { unlisten = remove; });
@@ -358,7 +365,7 @@ export function App() {
     id: row.id, name: row.filename, url: row.url, size: row.totalBytes ?? 0, downloaded: row.downloadedBytes,
     speed: row.speedBps ?? 0, etaSeconds: row.etaSeconds ?? 0,
     status: row.status === "active" ? "active" : row.status === "completed" ? "completed" : row.status === "failed" ? "failed" : row.status === "paused" ? "paused" : row.status === "cancelled" ? "cancelled" : "queued",
-    connections: 1, destination: row.destination, category: row.category ?? "other",
+    connections: 1, destination: row.destination, category: row.category ?? "other", finalPath: row.finalPath,
   });
   const handleAction = async (id: string, action: "pause" | "resume" | "cancel" | "delete" | "openFile" | "openFolder") => {
     if (!("__TAURI_INTERNALS__" in window)) throw new Error("Open ZYNERO desktop to control downloads.");
@@ -370,14 +377,18 @@ export function App() {
     else if (action === "cancel") setDownloads((current) => current.map((item) => item.id === id ? { ...item, status: "cancelled" } : item));
     else { const rows = await invoke<StoredDownload[]>("get_downloads"); setDownloads(rows.map(mapStoredDownload)); }
   };
+  const handleVerify = async (id: string, expectedSha256: string) => {
+    if (!("__TAURI_INTERNALS__" in window)) throw new Error("Open ZYNERO desktop to verify files.");
+    return invoke<boolean>("verify_download_hash", { id, expectedSha256 });
+  };
   const handleSubmit = async (url: string, destination: string) => {
     if (!("__TAURI_INTERNALS__" in window)) {
       throw new Error("Open ZYNERO desktop to start a real download.");
     }
-    const result = await invoke<{ id: string; url: string; filename: string; destination: string; status: DownloadStatus; totalBytes: number | null; category?: string }>("add_download", {
+    const result = await invoke<{ id: string; url: string; filename: string; destination: string; status: DownloadStatus; totalBytes: number | null; category?: string; finalPath?: string | null }>("add_download", {
       request: { url, destination },
     });
-    setDownloads((current) => [{ id: result.id, name: result.filename, url: result.url, size: result.totalBytes ?? 0, downloaded: 0, speed: 0, etaSeconds: 0, status: result.status, connections: 1, destination: result.destination, category: (result as { category?: string }).category ?? "other" }, ...current]);
+    setDownloads((current) => [{ id: result.id, name: result.filename, url: result.url, size: result.totalBytes ?? 0, downloaded: 0, speed: 0, etaSeconds: 0, status: result.status, connections: 1, destination: result.destination, category: result.category ?? "other", finalPath: result.finalPath ?? null }, ...current]);
     setModalOpen(false);
     setToast("Download queued by the Rust engine.");
     window.setTimeout(() => setToast(""), 4200);
@@ -397,7 +408,7 @@ export function App() {
         <header className="topbar"><div><div className="section-kicker">DOWNLOAD MANAGER <span className="live-indicator"><span /> LOCAL ENGINE</span></div><h1>{activeNav}</h1><p className="page-subtitle">Keep every transfer organized and moving.</p></div><button className="button button--primary" type="button" onClick={() => setModalOpen(true)}><Plus size={17} /> Add download</button></header>
         <section className="stats-grid"><StatCard label="Total downloads" value={`${downloads.length}`} detail="Across your workspace" icon={Download} accent="#74c9ff" /><StatCard label="Active speed" value={formatSpeed(downloads.filter((item) => item.status === "active").reduce((sum, item) => sum + item.speed, 0))} detail="Live from download workers" icon={Gauge} accent="#9ee7bd" /><StatCard label="Completed" value={`${downloads.filter((item) => item.status === "completed").length}`} detail="Finished transfers" icon={Check} accent="#c8b6ff" /><StatCard label="Scheduled" value="0" detail="No scheduled transfers" icon={Clock3} accent="#f4c46e" /></section>
         <div className="toolbar"><div className="search-field"><Search size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search downloads" aria-label="Search downloads" /></div>          <div className="toolbar-actions"><label className="category-filter"><ListFilter size={15} /><select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)} aria-label="Filter by category">{Object.entries(categoryLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><div className="theme-picker" aria-label="Theme"><Palette size={15} /><button className={theme === "midnight" ? "theme-swatch theme-swatch--active" : "theme-swatch"} type="button" onClick={() => setTheme("midnight")} aria-label="Midnight theme" /><button className={theme === "graphite" ? "theme-swatch theme-swatch--active theme-swatch--graphite" : "theme-swatch theme-swatch--graphite"} type="button" onClick={() => setTheme("graphite")} aria-label="Graphite theme" /><button className={theme === "dawn" ? "theme-swatch theme-swatch--active theme-swatch--dawn" : "theme-swatch theme-swatch--dawn"} type="button" onClick={() => setTheme("dawn")} aria-label="Dawn theme" /></div></div></div>
-        {filteredDownloads.length ? <section className="download-list" aria-label="Downloads">{filteredDownloads.map((item) => <DownloadCard key={item.id} item={item} onAction={(action) => handleAction(item.id, action)} />)}</section> : <EmptyDownloads onAdd={() => setModalOpen(true)} />}
+        {filteredDownloads.length ? <section className="download-list" aria-label="Downloads">{filteredDownloads.map((item) => <DownloadCard key={item.id} item={item} onAction={(action) => handleAction(item.id, action)} onVerify={(expectedSha256) => handleVerify(item.id, expectedSha256)} />)}</section> : <EmptyDownloads onAdd={() => setModalOpen(true)} />}
         <footer className="content-footer"><span><span className="footer-dot" /> Secure local workspace</span><span>Backend status: <strong>Ready for IPC</strong></span></footer>
       </section>
       {toast && <div className="toast"><Check size={16} />{toast}<button type="button" onClick={() => setToast("")} aria-label="Dismiss notification"><X size={14} /></button></div>}

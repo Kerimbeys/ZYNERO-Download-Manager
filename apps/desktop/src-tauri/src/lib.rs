@@ -14,6 +14,7 @@ use std::time::Duration;
 use tauri::Manager;
 
 use crate::scheduler::{evaluate_window, ScheduleDecision};
+use crate::security::redact_sensitive_text;
 
 #[cfg(not(test))]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -100,6 +101,15 @@ pub fn run() {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()
                         .level(log::LevelFilter::Info)
+                        .format(|out, message, record| {
+                            let safe_message = redact_sensitive_text(&message.to_string());
+                            out.finish(format_args!(
+                                "[{} {}] {}",
+                                record.level(),
+                                record.target(),
+                                safe_message
+                            ));
+                        })
                         .build(),
                 )?;
             }

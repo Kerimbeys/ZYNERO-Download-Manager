@@ -300,6 +300,12 @@ async fn inspect_remote_url(url: Url) -> Result<RemoteMetadata, String> {
     let mut supports_range = header_string(&head_response, ACCEPT_RANGES)
         .is_some_and(|value| value.eq_ignore_ascii_case("bytes"));
     let mut status_code = head_response.status().as_u16();
+    if content_type
+        .as_deref()
+        .is_some_and(is_web_page_content_type)
+    {
+        return Err("This URL returns a web page, not a downloadable file. Use a direct media URL.".to_string());
+    }
 
     if total_bytes.is_none() || !supports_range {
         let range_response = client
@@ -316,6 +322,12 @@ async fn inspect_remote_url(url: Url) -> Result<RemoteMetadata, String> {
         }
         total_bytes = total_bytes.or_else(|| parse_content_range_total(&range_response));
         content_type = content_type.or_else(|| header_string(&range_response, CONTENT_TYPE));
+        if content_type
+            .as_deref()
+            .is_some_and(is_web_page_content_type)
+        {
+            return Err("This URL returns a web page, not a downloadable file. Use a direct media URL.".to_string());
+        }
         supports_range = supports_range
             || range_response.status().as_u16() == 206
             || header_string(&range_response, ACCEPT_RANGES)
@@ -345,6 +357,14 @@ fn parse_content_length(response: &reqwest::Response) -> Option<i64> {
 fn parse_content_range_total(response: &reqwest::Response) -> Option<i64> {
     let value = response.headers().get(CONTENT_RANGE)?.to_str().ok()?;
     value.split('/').nth(1)?.parse().ok()
+}
+
+fn is_web_page_content_type(value: &str) -> bool {
+    value
+        .split(';')
+        .next()
+        .map(str::trim)
+        .is_some_and(|mime| matches!(mime, "text/html" | "application/xhtml+xml"))
 }
 
 fn header_string(

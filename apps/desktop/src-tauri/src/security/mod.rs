@@ -27,47 +27,81 @@ pub fn sha256_file(path: &Path) -> Result<String, String> {
 /// Redacts credential-bearing URL components before a value is written to logs.
 pub fn redact_sensitive_text(value: &str) -> String {
     let trimmed = value.trim();
-    if let Ok(mut url) = Url::parse(trimmed) {
-        if !matches!(url.scheme(), "http" | "https") {
-            return redact_header_text(trimmed);
-        }
-        let _ = url.set_username("");
-        let _ = url.set_password(None);
-        if url.query().is_some() {
-            let redacted_query = url
-                .query_pairs()
-                .map(|(key, query_value)| {
-                    let lower = key.to_ascii_lowercase();
-                    let safe_value = if [
-                        "token",
-                        "access_token",
-                        "refresh_token",
-                        "api_key",
-                        "apikey",
-                        "key",
-                        "password",
-                        "passwd",
-                        "secret",
-                        "signature",
-                        "sig",
-                    ]
-                    .iter()
-                    .any(|secret| lower == *secret || lower.contains(secret))
-                    {
-                        "[REDACTED]".to_string()
-                    } else {
-                        query_value.into_owned()
-                    };
-                    format!("{}={}", key, safe_value)
-                })
-                .collect::<Vec<_>>()
-                .join("&");
-            url.set_query(Some(&redacted_query));
-        }
-        return url.to_string();
+    let with_safe_headers = redact_header_text(trimmed);
+    redact_embedded_urls(&with_safe_headers)
+}
+
+fn redact_embedded_urls(value: &str) -> String {
+    let mut output = String::with_capacity(value.len());
+    let mut cursor = 0;
+
+    while cursor < value.len() {
+        let remainder = &value[cursor..];
+        let Some(relative_start) = ["https://", "http://"]
+            .iter()
+            .filter_map(|prefix| remainder.find(prefix))
+            .min()
+        else {
+            output.push_str(remainder);
+            break;
+        };
+
+        let start = cursor + relative_start;
+        output.push_str(&value[cursor..start]);
+        let end = value[start..]
+            .find(char::is_whitespace)
+            .map(|offset| start + offset)
+            .unwrap_or(value.len());
+        let raw_url = &value[start..end];
+        output.push_str(&redact_url(raw_url));
+        cursor = end;
     }
 
-    redact_header_text(trimmed)
+    output
+}
+
+fn redact_url(raw_url: &str) -> String {
+    let Ok(mut url) = Url::parse(raw_url) else {
+        return raw_url.to_string();
+    };
+    if !matches!(url.scheme(), "http" | "https") {
+        return raw_url.to_string();
+    }
+
+    let _ = url.set_username("");
+    let _ = url.set_password(None);
+    if url.query().is_some() {
+        let redacted_query = url
+            .query_pairs()
+            .map(|(key, query_value)| {
+                let lower = key.to_ascii_lowercase();
+                let safe_value = if [
+                    "token",
+                    "access_token",
+                    "refresh_token",
+                    "api_key",
+                    "apikey",
+                    "key",
+                    "password",
+                    "passwd",
+                    "secret",
+                    "signature",
+                    "sig",
+                ]
+                .iter()
+                .any(|secret| lower == *secret || lower.contains(secret))
+                {
+                    "[REDACTED]".to_string()
+                } else {
+                    query_value.into_owned()
+                };
+                format!("{}={}", key, safe_value)
+            })
+            .collect::<Vec<_>>()
+            .join("&");
+        url.set_query(Some(&redacted_query));
+    }
+    url.to_string()
 }
 
 fn redact_header_text(trimmed: &str) -> String {
@@ -138,5 +172,19 @@ mod tests {
             redact_sensitive_text("https://example.com/file.zip?part=1"),
             "https://example.com/file.zip?part=1"
         );
+    }
+
+    #[test]
+    fn redacts_a_rendered_log_line_before_persistence() {
+        let rendered = format!(
+            "download request url={} headers=Authorization: Bearer secret-token; Cookie: sid=private",
+            "https://user:password@example.com/file.zip?token=private-token"
+        );
+        let safe = redact_sensitive_text(&rendered);
+        assert!(!safe.contains("password"));
+        assert!(!safe.contains("private-token"));
+        assert!(!safe.contains("secret-token"));
+        assert!(!safe.contains("sid=private"));
+        assert!(safe.contains("[REDACTED]"));
     }
 }

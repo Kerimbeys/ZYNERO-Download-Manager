@@ -101,6 +101,12 @@ h1 { margin: 10px 0 7px; color: #f5f9ff; font-size: clamp(28px, 3vw, 38px); font
 .progress-track { height: 5px; overflow: hidden; border-radius: 8px; background: #203247; }
 .progress-track span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #48a9df, #a1e1ff); box-shadow: 0 0 12px rgba(112, 204, 249, .38); }
 .download-card__footer { gap: 18px; margin-top: 12px; color: #71869e; font-size: 10px; }
+.verification-row { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-top: 13px; padding-top: 12px; border-top: 1px solid var(--line-soft); color: #9eb4c8; font-size: 11px; }
+.verification-row label { color: #c8d8e5; font-weight: 650; }
+.verification-row input { flex: 1 1 280px; min-width: 0; padding: 9px 10px; border: 1px solid var(--line); border-radius: 7px; background: rgba(6, 14, 24, .72); color: #eaf5ff; font: inherit; outline: none; }
+.verification-row input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(116, 201, 255, .12); }
+.verification-row .button { padding: 8px 12px; font-size: 11px; }
+.verification-row [role="status"] { flex-basis: 100%; color: var(--success); font-weight: 650; }
 .status-pill { display: inline-flex; align-items: center; gap: 6px; color: #a9c2d5; }
 .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success); }
 .status-dot--queued { background: #edc36e; }
